@@ -1,0 +1,113 @@
+# Delegation & Model Dispatch Protocol
+
+Rules for when the main conversation delegates work to subagents, which model
+tier to use, and how results come back. Written for a Sonnet-class main agent.
+Prompt templates that implement this protocol: `.rules/templates.md`.
+
+## 1. The commander does not fight (when to delegate)
+
+Delegate to a subagent when ANY of these is true:
+
+- The task requires reading **more than 3 files** or **more than ~300 lines** total.
+- You **cannot predict how many files** a scan will touch (vault scans, `_raw/`
+  sweeps, history mining, grep-then-read chains).
+- Web research beyond a single known page.
+- Batch edits to **more than 3 wiki pages** (fan out; one agent per batch of ~5–10
+  pages).
+- Any `wiki-lint`, `cross-linker`, `wiki-dedup` (scan phase), `*-history-ingest`,
+  or `wiki-synthesize` run — these always scan at unknown scale.
+
+Do it yourself (no subagent) when: single known file, single page write, a quick
+grep for one symbol, answering from context you already have, talking to the user.
+
+**Why (see `.rules/diagnosis.md` #1):** every file read in the main conversation
+permanently occupies context. When context fills, compaction erases your
+instructions mid-task. Subagent context is disposable; yours is not.
+
+Independent subagents go in ONE message so they run in parallel. Don't re-run a
+search you already delegated — wait for the result.
+
+## 2. Model tiers
+
+The Agent tool takes an optional `model` parameter. In this harness the accepted
+values are `haiku`, `sonnet`, `opus` — treat them as tier slots:
+
+| Tier | `model` param (the ONLY valid values) | GLM backend maps it to | Use for |
+|---|---|---|---|
+| **Small** | `haiku` | *(model name not recorded — ask user)* | Mechanical work with a clear spec: apply an already-solved pattern across files, extract fields, reformat, count/list things |
+| **Middle** | `sonnet` | *(ask user)* | DEFAULT worker: search, page writing, ingest distillation, implementation, first-pass review |
+| **Big** | `opus` | `glm-5.2` | Judgment: merge/delete decisions, adversarial verification of high-risk work, escalation target, taste calls |
+
+- **Always pass the slot keyword (`haiku`/`sonnet`/`opus`), never a backend model
+  name like `glm-5.2`** — backend names will error; the proxy does the mapping.
+- **Omitting `model` is correct by default** — the subagent inherits the session
+  model. Specify a tier only when you deliberately want cheaper (Small, for
+  mechanical batches) or stronger (Big, for judgment).
+- If a model override errors anyway, omit the parameter and note it in
+  `.rules/lessons.md`.
+- The Agent tool has **no effort/reasoning parameter** — don't invent one. An
+  `effort` option exists only inside Workflow scripts (`agent()` opts), and
+  Workflow itself requires explicit user opt-in ("use a workflow") — default to
+  the plain Agent tool.
+
+Agent types (the `subagent_type` parameter): `Explore` (read-only search —
+cheapest way to locate things), `Plan` (read-only architect), `general-purpose` /
+`claude` (can write files). Never send a write task to `Explore`/`Plan`.
+
+## 3. The dispatch trio — every subagent prompt contains
+
+1. **Goal + motivation** — what to produce AND why/for whom, so the agent can
+   make sensible micro-decisions without asking back.
+2. **Acceptance criteria** — objectively checkable conditions ("every page you
+   touch still has all 6 frontmatter fields", "list every source file examined,
+   not just matches").
+3. **Report format** — exactly what to return (see §4), including "your final
+   message is the ONLY thing I receive — put everything there".
+
+A prompt missing any of the three gets you a confident agent doing the wrong
+thing. Copy from `.rules/templates.md` rather than writing from scratch.
+
+## 4. Report contract (what comes back)
+
+- **Conclusions only**, ≤50 lines: findings, decisions needed, `file:line`
+  references. Never raw file contents, never full page bodies.
+- **Long artifacts go to disk**, report carries the path: wiki pages into the
+  vault; drafts/intermediate data into `output/` in this repo or the session
+  scratchpad. Rule of thumb: anything >50 lines is a file, not a message.
+- Reports must **separate observed facts from inference** ("index.md lists 570
+  pages; 5 files on disk are missing from it" vs "the index looks stale").
+- If the agent could not finish, the report says exactly what remains — a partial
+  honest report beats a padded complete-looking one.
+
+## 5. Escalation & de-escalation ladder
+
+- **Small-tier agent gets it wrong once → escalate to Middle immediately.** Don't
+  coach a Small model through corrections; retry-coaching costs more than the
+  upgrade and fails anyway.
+- **Middle-tier fails the same subtask twice → escalate to Big**, and hand the
+  Big agent the full failure trail: what was attempted, verbatim key output, what
+  was expected instead. Without the trail, the Big model repeats attempt #1.
+- **Big model solves it → extract the pattern, de-escalate:** have Small/Middle
+  apply the now-explicit recipe across the remaining batch. Don't keep paying Big
+  prices for solved problems.
+- **Hard cap: two retry rounds per approach.** After that, the approach is wrong,
+  not the execution — change strategy or surface to the user with the trail
+  (`.rules/judgment.md` §Wrong-direction has the signals).
+
+## 6. Verify, don't self-certify
+
+The agent (or you) that produced work never signs off on it. Acceptance runs in
+**fresh context** — a new subagent with no memory of the production process:
+
+- **File writes** → read-back verification: a fresh agent reads the files and
+  checks them against the acceptance criteria (the `impl-validator` skill is
+  built for this — returns pass/warn/fail). Mandatory when >3 pages were written
+  or anything was merged/deleted.
+- **Code changes** → run the tests or actually execute the code path. "It looks
+  right" is not verification.
+- **High-risk judgment** (dedup merges, taxonomy changes, rebuild decisions) →
+  second opinion from a Big-tier agent, or generate 2–3 independent answers and
+  have a separate judge pick — disagreement between samples means escalate to
+  the user.
+- Verification failures go back to the PRODUCER role to fix (possibly a new
+  agent), then re-verify. Verifier never fixes; fixer never verifies.
