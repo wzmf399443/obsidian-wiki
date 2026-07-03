@@ -14,7 +14,7 @@ You are performing a destructive operation on the wiki. Always archive first, al
 
 ## Before You Start
 
-1. **Resolve config** — follow the Config Resolution Protocol in `llm-wiki/SKILL.md` (walk up CWD for `.env` → `~/.obsidian-wiki/config` → prompt setup). This gives `OBSIDIAN_VAULT_PATH` and optional QMD settings such as `QMD_WIKI_COLLECTION`
+1. **Resolve config** — follow the Config Resolution Protocol in `llm-wiki/SKILL.md` (inline `@name` override → walk up CWD for `.env` → `~/.obsidian-wiki/config` → prompt setup). This gives `OBSIDIAN_VAULT_PATH` and optional QMD settings such as `QMD_WIKI_COLLECTION`
 2. Read `.manifest.json` to understand current state
 3. **Confirm the user's intent.** This skill supports three modes:
    - **Archive only** — snapshot current wiki, no rebuild
@@ -101,8 +101,7 @@ Tell the user the vault is cleared and ready for a full re-ingest. They can now 
 1. `wiki-status` — to see all sources as "new"
 2. `claude-history-ingest` — to reprocess Claude history
 3. `codex-history-ingest` — to reprocess Codex session history
-4. `wiki-ingest` — to reprocess documents
-5. `data-ingest` — to reprocess any other data
+4. `wiki-ingest` — to reprocess documents and any other raw data
 
 Each of these will rebuild the manifest as they go.
 

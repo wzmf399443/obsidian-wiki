@@ -24,18 +24,39 @@ If a referenced file is missing, ignore that reference and continue.
 **Prime directive:** the main conversation is a commander, not a worker. Bulk
 reading and batch writing go to subagents; the main context holds decisions.
 
-## Configuration — pinned facts (verified 2026-07-03)
+## Configuration — pinned facts (verified 2026-07-03, routing rules added 2026-07-04)
 
 - **`.env` exists at this repo's root and is the active config.** Read it once;
-  skip the walk-up/global-config search described below unless it's missing.
+  skip the resolution protocol below unless it's missing or an `@name` override
+  is in play.
 - QMD is NOT configured → skills fall back to Grep/Glob. Staged writes are off.
   Link format is `wikilink`. Max 15 pages per ingest.
 - If an operation fails in a way a stale pin would explain (e.g. vault path gone),
   re-verify and update this section (see `.rules/maintenance.md`).
 
-Fallback resolution order when `.env` is absent: (1) walk up from CWD to `$HOME`
-looking for a `.env` containing `OBSIDIAN_VAULT_PATH`; (2) `~/.obsidian-wiki/config`;
-(3) tell the user to run `wiki-setup`. Full protocol: `.skills/llm-wiki/SKILL.md`.
+Full Config Resolution Protocol when `.env` is absent or an `@name` override is
+present: 0. **Inline vault override (`@name`)** — if the request contains an
+`@<name>` token, resolve `~/.obsidian-wiki/config.<name>` directly for that
+invocation only (see "Targeting a specific vault" below); 1. walk up from CWD to
+`$HOME` looking for a `.env` containing `OBSIDIAN_VAULT_PATH`; 2.
+`~/.obsidian-wiki/config`; 3. tell the user to run `wiki-setup`. Full protocol:
+`.skills/llm-wiki/SKILL.md`.
+
+### Targeting a specific vault
+
+You can maintain multiple vaults (each a `~/.obsidian-wiki/config.<name>` file
+managed by `wiki-switch`) and reach any of them from any directory:
+
+- **`@name` (per-invocation override)** — prefix or mention `@<name>` anywhere
+  in a request to route that one command to that vault, e.g. `@work save this`
+  or `wiki-query @personal what do I know about X`. It overrides the CWD `.env`
+  and the active symlink **for that invocation only** — it does **not** flip
+  your default vault. If `config.<name>` doesn't exist, the skill reports it and
+  lists available vaults; do **not** silently fall back to the default. The
+  `@name` is stripped before the rest of the request is used as content.
+- **`/wiki-switch <name>` (persistent default)** — re-points the active symlink
+  so all future requests use that vault. This is your default "brain" vault;
+  use `@name` to dip into the other one without switching.
 
 **After reading config, read the vault's owner-conventions file** — it overrides
 framework defaults for the whole session. Check `$OBSIDIAN_VAULT_PATH/AGENTS.md`
@@ -68,35 +89,41 @@ Skills live in `.skills/<name>/SKILL.md`. Match intent to skill:
 | Intent | Skill |
 |---|---|
 | "set up my wiki" / "initialize" | `wiki-setup` |
-| "/wiki-history-ingest <agent>" (claude/codex/hermes/openclaw/copilot/pi) | `wiki-history-ingest` (router) |
-| "import my <agent> history" / "mine my sessions" / mentions `~/.claude`, `~/.codex`, `~/.hermes`, `~/.openclaw`, `~/.copilot`, `~/.pi` | `<agent>-history-ingest` |
-| "/wiki-claude [topic]" etc. — topic-targeted pull from one agent's history | `wiki-agent` |
-| "/ingest-url <url>" / "save this page" | `ingest-url` |
-| "ingest" / "add this to the wiki" / "process these docs" / `_raw/` promotion | `wiki-ingest` |
-| "process this export" / logs, transcripts, chat dumps | `data-ingest` |
-| "ingest the obsidian-wiki project" | `obsidian-wiki-ingest` |
-| "what's the status" / "show the delta" / "wiki insights" / "hubs" | `wiki-status` |
-| "what do I know about X" / any knowledge question | `wiki-query` |
-| "audit" / "lint" / "broken links" (`--consolidate` = act mode) | `wiki-lint` |
-| "dedup" / "merge duplicates" / "consolidate my wiki" | `wiki-dedup` |
+| "/wiki-history-ingest claude" / "/wiki-history-ingest codex" / "/wiki-history-ingest hermes" / "/wiki-history-ingest pi" | `wiki-history-ingest` |
+| "ingest" / "add this to the wiki" / "process these docs" / "process this export" / "ingest this data" / logs, transcripts / "/ingest-url <url>" / "add this URL" / "ingest this link" / "save this page" | `wiki-ingest` |
+| "import my Claude history" / "mine my conversations" | `claude-history-ingest` |
+| "import my Codex history" / "mine my Codex sessions" | `codex-history-ingest` |
+| "import my Hermes history" / "mine my Hermes memories" / "ingest ~/.hermes" | `hermes-history-ingest` |
+| "import my OpenClaw history" / "mine my OpenClaw sessions" / "ingest ~/.openclaw" | `openclaw-history-ingest` |
+| "import my Copilot history" / "mine my Copilot sessions" / "ingest ~/.copilot" | `copilot-history-ingest` |
+| "import my Pi history" / "mine my Pi sessions" / "ingest ~/.pi" | `pi-history-ingest` |
+| "what's the status" / "what's been ingested" / "show the delta" | `wiki-status` |
+| "wiki insights" / "hubs" / "wiki structure" | `wiki-status` (insights mode) |
+| "what do I know about X" / "find info on Y" / any question | `wiki-query` |
+| "audit" / "lint" / "find broken links" / "wiki health" | `wiki-lint` |
+| "dedup my wiki" / "find duplicate pages" / "merge duplicates" / "identity resolution" / "consolidate my wiki" | `wiki-dedup` |
 | "rebuild" / "start over" / "archive" / "restore" | `wiki-rebuild` |
-| "link my pages" / "cross-reference" / "orphans" | `cross-linker` |
-| "fix my tags" / "tag audit" | `tag-taxonomy` |
-| "update wiki" / "sync to wiki" (from any project) | `wiki-update` |
-| "export wiki" / "graphml" / "neo4j" | `wiki-export` |
-| "color my graph" | `graph-colorize` |
-| "save this" / "/wiki-capture" / "file this conversation" | `wiki-capture` |
-| "/wiki-research [topic]" / autonomous web research → wiki | `wiki-research` |
-| "create a dashboard" / "show all X as a table" | `wiki-dashboard` |
-| "synthesize" / "find connections" / "/wiki-synthesize" | `wiki-synthesize` |
-| "/wiki-context-pack" / "context slice for X" | `wiki-context-pack` |
-| "/wiki-stage-commit" / "review staged pages" | `wiki-stage-commit` |
-| "/wiki-digest" / "what did I learn this week" | `wiki-digest` |
-| "/wiki-switch NAME" / "list my wikis" | `wiki-switch` |
-| "/memory-bridge" / "compare tool memories" | `memory-bridge` |
-| "/daily-update" / "morning sync" / cron setup | `daily-update` |
-| "/impl-validator" / "validate what you did" | `impl-validator` |
+| "link my pages" / "cross-reference" / "connect my wiki" | `cross-linker` |
+| "fix my tags" / "normalize tags" / "tag audit" | `tag-taxonomy` |
+| "update wiki" / "sync to wiki" / "save this to my wiki" | `wiki-update` |
+| `@work update wiki` / `wiki-query @personal ...` / `@research save this` | Any matching wiki skill + Config Resolution Protocol `@name` override |
+| "export wiki" / "export graph" / "graphml" / "neo4j" / "export to OKF" / "OKF bundle" / "open knowledge format" | `wiki-export` |
+| "import wiki" / "import from export" / "load graph.json" / "import vault" / "import OKF bundle" / "/wiki-import" | `wiki-import` |
+| "color my graph" / "color code obsidian" / "color by tag/category/visibility" | `graph-colorize` |
+| "save this" / "/wiki-capture" / "capture this" / "file this conversation" / "/wiki-capture --quick" / "quick capture" / "capture this finding" / "save this gotcha" / "drop to raw" | `wiki-capture` |
+| "/wiki-research [topic]" / "research X" / "find everything about Y" | `wiki-research` |
+| "create a dashboard" / "vault dashboard" / "show all X as a table" / "dynamic view" | `wiki-dashboard` |
+| "synthesize my wiki" / "find connections" / "what concepts keep coming up together" / "/wiki-synthesize" | `wiki-synthesize` |
 | "create a new skill" | `skill-creator` |
+| "/vault-skill-factory" / "make a skill from my wiki" / "turn these pages into a skill" / "package my notes on X as a skill" / "build a domain-expert skill from my vault" | `vault-skill-factory` |
+| "/wiki-claude [topic]" / "/wiki-codex [topic]" / "/wiki-hermes [topic]" / "/wiki-openclaw [topic]" / "/wiki-copilot [topic]" / "/wiki-pi [topic]" | `wiki-agent` |
+| "/memory-bridge" / "browse codex memory" / "what did codex know about X" / "compare tool memories" / "cross-tool memory" | `memory-bridge` |
+| "/daily-update" / "morning sync" / "refresh the wiki index" / "set up the daily cron" / "install terminal notification" | `daily-update` |
+| "/impl-validator" / "check this implementation" / "validate what you did" / "is this correct?" | `impl-validator` |
+| "/wiki-switch NAME" / "switch to my work wiki" / "switch vault" / "change wiki" / "list my wikis" / "show my vaults" / "create a new vault config" | `wiki-switch` |
+| "/wiki-digest" / "what did I learn this week" / "weekly digest" / "knowledge summary" / "what's new in my wiki" / "summarize my recent learning" / "monthly review" | `wiki-digest` |
+| "/wiki-stage-commit" / "review staged pages" / "commit staged writes" | `wiki-stage-commit` |
+| "/wiki-context-pack" / "context slice for X" | `wiki-context-pack` |
 | wiki pattern theory / architecture questions | `llm-wiki` |
 
 ## Cross-Project Usage
@@ -131,4 +158,8 @@ system tags: they don't count toward the 5-tag limit. Details in `wiki-query` /
 - **Keep context warm.** `hot.md` is the session-to-session handoff — read it at
   start, update it after writes.
 
-Full architecture pattern: `.skills/llm-wiki/SKILL.md`.
+## Architecture Reference
+
+For the full pattern (three-layer architecture, page templates, project org), read `.skills/llm-wiki/SKILL.md`.
+
+The vault format is structurally conformant with the [Open Knowledge Format (OKF) v0.1](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md) — markdown files with YAML frontmatter, category subfolders, reserved `index.md`/`log.md`. `wiki-export` (OKF mode) and `wiki-import` are the bridge: they translate between our native frontmatter (`title`/`category`/`tags`/`sources`/`created`/`updated` + `summary`) and OKF (`type`/`title`/`description`/`resource`/`tags`/`timestamp`), making vaults exchangeable with any OKF tool. The OKF round-trip is lossless; the `graph.json` round-trip is not.

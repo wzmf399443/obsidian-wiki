@@ -14,7 +14,7 @@ You are scanning the wiki for concepts that co-occur across many pages but have 
 
 ## Before You Start
 
-1. **Resolve config** — follow the Config Resolution Protocol in `llm-wiki/SKILL.md` (walk up CWD for `.env` → `~/.obsidian-wiki/config` → prompt setup). This gives `OBSIDIAN_VAULT_PATH` and `OBSIDIAN_LINK_FORMAT` (default: `wikilink`).
+1. **Resolve config** — follow the Config Resolution Protocol in `llm-wiki/SKILL.md` (inline `@name` override → walk up CWD for `.env` → `~/.obsidian-wiki/config` → prompt setup). This gives `OBSIDIAN_VAULT_PATH` and `OBSIDIAN_LINK_FORMAT` (default: `wikilink`).
 2. Read `index.md` to get the full page inventory.
 3. Read `hot.md` if it exists — it surfaces recent activity and active threads that may already point to synthesis opportunities.
 4. Read `_meta/taxonomy.md` to understand the tag vocabulary.
@@ -104,6 +104,10 @@ lifecycle_changed: TIMESTAMP_DATE
 
 *Where the two concepts pull in opposite directions. Unresolved contradictions. Cases where applying one undermines the other.*
 
+## Strongest Objection
+
+*The best skeptical reading of THIS page's cross-cutting insight — the case a sharp critic would make that the connection is spurious, overstated, or an artifact of how the sources were written. Follow it with a testable search query (e.g. `> test: does X actually hold when Y is controlled for?`), never an invented citation. A synthesis that can't name its own strongest objection hasn't earned its conclusion.*
+
 ## Open Questions
 
 *What this synthesis surfaces that the wiki doesn't yet have an answer for. Good candidates for future research.*
@@ -158,6 +162,7 @@ Skipped (consider next time):
 - [ ] Every synthesis page links back to its source concepts
 - [ ] Source concept pages link forward to the synthesis page
 - [ ] No synthesis page just restates what's already on the source pages — it must add a cross-cutting insight
+- [ ] Every synthesis page names its Strongest Objection with a testable search query (not an invented source)
 - [ ] `index.md` and `log.md` updated
 - [ ] `hot.md` updated
 

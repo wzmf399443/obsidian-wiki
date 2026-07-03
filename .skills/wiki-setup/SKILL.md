@@ -55,7 +55,7 @@ mkdir -p "$OBSIDIAN_VAULT_PATH"/{concepts,entities,skills,references,synthesis,j
 - `.obsidian/` — Obsidian's own config. Creates vault recognition.
 - `projects/` — Per-project knowledge (populated during ingest).
 - `_archives/` — Stores wiki snapshots for rebuild/restore operations.
-- `_raw/` — Staging area for unprocessed drafts. Drop rough notes here; `wiki-ingest` will promote them to proper wiki pages and delete the originals.
+- `_raw/` — Staging area for unprocessed drafts. Drop rough notes here; `wiki-ingest` will promote them to proper wiki pages and move the originals into `_raw/_archived/` (created on first use).
 - `_staging/` — Review queue for LLM-written pages when `WIKI_STAGED_WRITES=true`. Pages here are not visible in Obsidian's graph until promoted via `/wiki-stage-commit`.
 
 ## Step 3: Create Special Files
@@ -176,6 +176,53 @@ Report the results and tell the user they can now:
 4. Run `claude-history-ingest` to mine their Claude conversations
 5. Run `codex-history-ingest` to mine their Codex sessions (if they use Codex)
 6. Run `wiki-status` again anytime to check the delta
+
+## Optional: Install the Stop Hook (Auto-Capture)
+
+Ask the user: **"Want to auto-capture findings at session end?"**
+
+If yes, install the Stop hook into their global Claude Code settings so that every session
+with meaningful work automatically prompts `/wiki-capture --quick` before closing.
+
+**What the hook does:** reads the session transcript on Stop, counts file edits and shell
+calls, and if significant work happened, asks Claude to run `/wiki-capture --quick` once.
+The `wiki-capture` quick-mode KEEP/SKIP gate prevents noise — routine or
+inconclusive sessions are skipped automatically.
+
+**Installation steps:**
+
+1. Find the obsidian-wiki repo path (the directory where this skill lives). If
+   `OBSIDIAN_WIKI_REPO` is set in config, use that. Otherwise, check common locations:
+   `~/Documents/projects/obsidian-wiki`, `~/obsidian-wiki`, or ask the user.
+
+2. Merge the hook entry into `~/.claude/settings.json`:
+
+```json
+{
+  "hooks": {
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash <REPO_PATH>/.claude/hooks/wiki-stop-capture.sh"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+   If `~/.claude/settings.json` already exists and has a `hooks.Stop` array, **append** the new
+   entry rather than replacing — don't clobber existing hooks.
+
+3. Confirm: "Stop hook installed. Claude Code will prompt `/wiki-capture --quick` at the
+   end of any session where you write files or run ≥ 4 shell commands."
+
+**To uninstall later:** remove the hook entry from `~/.claude/settings.json` or set
+`HIVEMIND_CAPTURE=false` in your shell to skip capture for a single session.
 
 ## Optional: Refresh QMD After Setup
 
