@@ -16,12 +16,14 @@ You are computing the current state of the wiki: what's been ingested, what's ne
 
 ## Before You Start
 
-1. **Resolve config** — follow the Config Resolution Protocol in `llm-wiki/SKILL.md` (walk up CWD for `.env` → `~/.obsidian-wiki/config` → prompt setup). This gives `OBSIDIAN_VAULT_PATH`, `OBSIDIAN_SOURCES_DIR`, `CLAUDE_HISTORY_PATH`, and `CODEX_HISTORY_PATH`.
+1. **Resolve config** — follow the Config Resolution Protocol in `llm-wiki/SKILL.md` (inline `@name` override → walk up CWD for `.env` → `~/.obsidian-wiki/config` → prompt setup). This gives `OBSIDIAN_VAULT_PATH`, `OBSIDIAN_SOURCES_DIR`, `CLAUDE_HISTORY_PATH`, and `CODEX_HISTORY_PATH`.
 2. Read `.manifest.json` at the vault root — this is the ingest tracking ledger
 
 ## The Manifest
 
 The manifest lives at `$OBSIDIAN_VAULT_PATH/.manifest.json`. It tracks every source file that has been ingested. If it doesn't exist, this is a fresh vault with nothing ingested.
+
+> **Source keys are canonical absolute paths** (`~` and env vars expanded). Never mix `~`-relative and absolute keys — the same file would be tracked twice and re-ingested. See `llm-wiki/SKILL.md` → `.manifest.json`. Repair a mixed manifest with `scripts/manifest.py normalize <vault>`.
 
 ```json
 {
@@ -37,7 +39,7 @@ The manifest lives at `$OBSIDIAN_VAULT_PATH/.manifest.json`. It tracks every sou
       "pages_created": ["concepts/transformers.md"],
       "pages_updated": ["entities/vaswani.md"]
     },
-    "~/.claude/projects/-Users-name-my-app/abc123.jsonl": {
+    "/Users/name/.claude/projects/-Users-name-my-app/abc123.jsonl": {
       "ingested_at": "2026-04-06T11:00:00Z",
       "size_bytes": 128000,
       "modified_at": "2026-04-06T09:00:00Z",
@@ -49,7 +51,7 @@ The manifest lives at `$OBSIDIAN_VAULT_PATH/.manifest.json`. It tracks every sou
   },
   "projects": {
     "my-app": {
-      "source_path": "~/.claude/projects/-Users-name-my-app",
+      "source_path": "/Users/name/.claude/projects/-Users-name-my-app",
       "vault_path": "projects/my-app",
       "last_ingested": "2026-04-06T11:00:00Z",
       "conversations_ingested": 5,
@@ -211,7 +213,7 @@ Replace the old single-line Recommendation with a ranked **What to Do Next** sec
 
 0. **Staged writes pending** (only when `WIKI_STAGED_WRITES=true`) — Glob `$OBSIDIAN_VAULT_PATH/_staging/**/*.md` and `**/*.patch.md`. Count new pages and patches separately. Report the oldest file's age (mtime). This is always listed first if any staged files exist — it has the highest intent signal (the LLM already did the work; the human just needs to review).
 
-1. **`_raw/` files** — list every file in `$OBSIDIAN_VAULT_PATH/_raw/` that isn't a `.gitkeep`. Count and name them.
+1. **`_raw/` files** — list every file at the top level of `$OBSIDIAN_VAULT_PATH/_raw/` that isn't a `.gitkeep`, excluding the `_archived/` subdirectory (already-promoted drafts kept for provenance, not pending work). Count and name them.
 
 2. **Stale core pages** — scan all vault `.md` files. A page is "stale" when its `updated` frontmatter field is ≥90 days before today's date AND it has ≥5 incoming wikilinks (i.e., it's "core" — other pages depend on it). List them by name + last-updated date.
 
@@ -284,13 +286,23 @@ Where the delta report tells the user what's pending, insights mode tells them w
 
 ### What to compute
 
-**First, build the wikilink graph.** Glob all `.md` pages, extract every `[[wikilink]]`, and build:
-- `incoming[page]` = count of other pages that link to this page
-- `outgoing[page]` = count of pages this page links out to
-- `tags[page]` = set of tags from frontmatter
-- `category[page]` = directory prefix (concepts/, entities/, skills/, etc.)
+**First, run the graph analyser.** This replaces manual wikilink parsing — one command produces all the raw data you need:
 
-You'll reuse this graph across all sections below.
+```bash
+obsidian-wiki graph-analyse "$OBSIDIAN_VAULT_PATH" --pretty
+```
+
+Output fields used below:
+- `god_nodes` — pages ranked by total degree (in + out). Use for anchor pages and hub classification.
+- `communities` — page clusters by link density (label propagation / Leiden). Use for bridge detection and cluster labelling.
+- `surprising_connections` — cross-community edges ranked by unexpectedness. Use directly in the Surprising Connections section.
+- `dead_ends` — pages with zero outgoing links. Use for orphan-adjacent and cross-linker suggestions.
+- `isolated` — pages with zero links in either direction. Use for stubs/orphan reporting.
+- `stats` — total pages, edges, communities.
+
+**Fallback** (if `obsidian-wiki` is not installed): glob all `.md` pages, extract every `[[wikilink]]`, and build `incoming`, `outgoing`, and `tags` maps manually.
+
+You'll reuse this data across all sections below.
 
 ---
 
@@ -423,7 +435,7 @@ After writing the file, append to `log.md`:
 
 - If the manifest doesn't exist, report everything as "new" and recommend a full ingest
 - This skill only reads and reports — it doesn't modify anything (except writing `_insights.md` in insights mode, which is regenerable)
-- The actual ingest work is done by the ingest skills (`wiki-ingest`, `claude-history-ingest`, `codex-history-ingest`, `data-ingest`)
+- The actual ingest work is done by the ingest skills (`wiki-ingest`, `claude-history-ingest`, `codex-history-ingest`)
 - Those skills are responsible for updating the manifest after they finish
 
 ## QMD Refresh After Vault Writes

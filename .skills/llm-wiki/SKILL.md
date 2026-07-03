@@ -21,6 +21,8 @@ The user's original documents — articles, papers, notes, PDFs, conversation lo
 
 Think of raw sources as the "source code" — authoritative but hard to query directly.
 
+Don't confuse this with the in-vault `_raw/` staging folder, which is a different thing: a scratch inbox for quick captures and drafts awaiting promotion (see `wiki-capture` and `wiki-ingest`). Files there aren't Layer 1 sources, but `wiki-ingest` still moves rather than deletes them on promotion, since some have no other copy.
+
 ### Layer 2: The Wiki (LLM-maintained)
 
 A collection of interconnected Obsidian-compatible markdown files organized by category. This is the compiled knowledge — synthesized, cross-referenced, and navigable. Each page has:
@@ -48,7 +50,7 @@ Organize pages into these default categories (customizable in `.env`):
 | `concepts/` | Ideas, theories, mental models | `concepts/transformer-architecture.md` |
 | `entities/` | People, orgs, tools, projects | `entities/andrej-karpathy.md` |
 | `skills/` | How-to knowledge, procedures | `skills/fine-tuning-llms.md` |
-| `references/` | Summaries of specific sources | `references/attention-is-all-you-need.md` |
+| `references/` | Summaries of specific sources; academic papers use the Paper Deep-Dive Template (below) | `references/attention-is-all-you-need.md` |
 | `synthesis/` | Cross-cutting analysis across sources | `synthesis/scaling-laws-debate.md` |
 | `journal/` | Timestamped observations, session logs | `journal/2024-03-15.md` |
 
@@ -149,6 +151,10 @@ The manifest enables:
 - **Audit** — which source produced which wiki page
 - **Staleness detection** — source changed but wiki page hasn't been updated
 
+**Canonical source keys.** Source keys MUST be stored in a single canonical form: **absolute paths with `~` and env vars expanded** (e.g. `/Users/me/.claude/projects/.../abc.jsonl`, never `~/.claude/...`). The manifest is keyed by the raw string, so a mix of `~`-relative and absolute keys lets the *same file* be tracked twice — and the delta check then re-ingests an already-processed file because the lookup misses the other-form key. Always expand before you compare against the manifest and before you write a new entry. To repair an existing vault that already has both forms, run `scripts/manifest.py normalize <vault>` (merges colliding entries, keeps the newest `ingested_at`).
+
+**Recording provenance.** When you write a manifest entry, populate `pages_created` and `pages_updated` with the vault-relative page paths that source contributed to. This is what makes re-ingestion (when a source changes) able to find the pages to revisit, instead of guessing.
+
 ## Page Template
 
 When creating a new wiki page, use this structure:
@@ -196,6 +202,71 @@ Things that are unresolved or need more sources.
 
 - [[references/attention-is-all-you-need]] — Original paper
 ```
+
+## Paper Deep-Dive Template
+
+The generic template suits most sources. **Academic papers are the exception.** For ML/AI/LLM/VLM (and similar) papers landing in `references/`, the substance lives in the architecture, the equations, and the results table — exactly what a terse "Key Ideas" list flattens away. For these, use the richer template below. This is the one place where *"compile, don't retrieve"* yields to a thorough, self-contained walkthrough a reader could study instead of the paper.
+
+Obsidian renders the needed primitives natively, so no extra tooling is required: Mermaid fenced diagrams, `$$…$$` LaTeX (MathJax), markdown tables, and `![[image]]` / `![[paper.pdf#page=N]]` embeds.
+
+Use this template only when the source is an academic paper (arXiv/conference) with load-bearing figures or equations. Everything else uses the generic Page Template above. Frontmatter, provenance markers, confidence, lifecycle, and `relationships:` are unchanged — only the body sections differ.
+
+````markdown
+---
+# ...required frontmatter, same as the generic template; category: references...
+---
+
+# Paper Title
+
+> [!tldr] One sentence: what's new, plus the headline result.
+
+## Problem & Motivation
+
+What's broken or missing that this paper addresses.
+
+## Method / Architecture
+
+Prose walkthrough. Embed the paper's real architecture figure as the primary
+visual (see *Academic papers* in `wiki-ingest` for the PyMuPDF extraction recipe).
+Fall back to a Mermaid flowchart only when no figure can be extracted.
+
+![[attachments/<slug>-fig1.png]]
+*Figure N (Author Year): one-line caption.*
+
+## Key Equations
+
+The 1–3 core equations as display math, not backtick code:
+
+$$ \mathcal{L} = \mathbb{E}_{x}\!\left[-\log p_\theta(y \mid z)\right] $$
+
+## Results
+
+Headline numbers as a table, not a comma-separated blob — and embed a key
+results/motivating figure (scaling plot, benchmark chart, capability collage)
+when the paper has one:
+
+| Method | Benchmark | Metric | Cost |
+|---|---|---|---|
+| Baseline | … | … | … |
+| **This paper** | … | … | … |
+
+![[attachments/<slug>-resultsN.png]]
+*Figure N (Author Year): one-line caption.*
+
+## Limitations
+
+What the paper concedes or sidesteps. Mark reading-between-the-lines as ^[inferred].
+
+## Related
+
+Typed `[[wikilinks]]` to neighbouring work.
+
+## Sources
+
+- Clickable canonical link, e.g. <https://arxiv.org/abs/XXXX.XXXXX>
+````
+
+A Mermaid diagram reconstructed from the paper's prose is a synthesis, not a transcription — treat it as `^[inferred]` when the interpretation is non-trivial.
 
 ## Provenance Markers
 
@@ -270,7 +341,7 @@ Each entry has two required fields:
 - **Direction matters** — the page declaring the entry is the *source*; `target` is the destination. Only declare relationships from this page's perspective.
 - **Don't fabricate** — only add a typed entry when the source material makes the relationship direction and type clear. When in doubt, use `related_to` or omit.
 
-Skills that read `relationships:`: `wiki-export` (emits typed edges), `cross-linker` (writes typed entries when inferring links), `wiki-query` (may surface type in answers).
+Skills that read `relationships:`: `wiki-export` (emits typed edges), `cross-linker` (writes typed entries when inferring links), `wiki-query` (surfaces type in answers and walks the typed-edge graph for multi-hop "how is X connected to Y" path queries — bounded BFS over the `relationships:` adjacency, frontmatter-only).
 
 ## Confidence and Lifecycle
 
@@ -327,7 +398,7 @@ source_quality_score = avg(quality score per distinct source_id)
 
 | Skill | base_confidence | lifecycle |
 |---|---|---|
-| `ingest-url` | `0.17 + 0.5 × classify(url)` | `draft` |
+| `wiki-ingest` (URL) | `0.17 + 0.5 × classify(url)` | `draft` |
 | `wiki-ingest` (single doc) | per-source classifier | `draft` |
 | `wiki-ingest` (multi-doc) | `min(N/3,1)×0.5 + avg_q×0.5` | `draft` |
 | `wiki-research` | varies, often 0.85+ | `draft` |
@@ -335,7 +406,6 @@ source_quality_score = avg(quality score per distinct source_id)
 | `*-history-ingest` | 0.42 | `draft` |
 | `wiki-update` | 0.59 | `draft` |
 | `wiki-synthesize` | `min(input_pages.base_confidence)` | `draft` |
-| `data-ingest` | 0.37 | `draft` |
 
 ### Lifecycle state machine
 
@@ -451,12 +521,20 @@ Every write skill reads `OBSIDIAN_LINK_FORMAT` from config before generating lin
 
 ### Resolution order
 
+0. **Inline vault override (`@name`)** — if the user's request contains an `@<name>` token (e.g. `@work save this`, `query @personal about X`), resolve `~/.obsidian-wiki/config.<name>` directly and use its `OBSIDIAN_VAULT_PATH`. This **overrides** both the CWD `.env` walk-up and the active symlink, and applies to **that invocation only** — never run `ln -sf` or otherwise change the active vault for an `@name` request. If `~/.obsidian-wiki/config.<name>` doesn't exist, tell the user it doesn't exist and list the available vaults (the `wiki-switch` **List** logic), then stop — do **not** silently fall back to the default. The `@name` is a routing directive, not content: strip it out before treating the rest of the request as the actual instruction or page text.
 1. **Walk up from CWD** — look for a `.env` file in the current directory, then each parent, up to `$HOME`. Stop at the first `.env` that contains `OBSIDIAN_VAULT_PATH`.
 2. **Global config** — if no local `.env` found, read `~/.obsidian-wiki/config`.
 3. **Prompt setup** — if neither exists, tell the user: "No config found. Run `wiki-setup` to initialize your wiki."
 
+`@name` is a **per-invocation override** — it targets one vault for one request. `/wiki-switch <name>` is the **persistent default** — it re-points the active symlink for all future requests. Use `@name` to touch the other vault from anywhere without disturbing your default ("brain") vault.
+
 ```
 find_config() {
+  # $1 = parsed @name from the request, if any (else empty)
+  if [[ -n "$1" ]]; then
+    [[ -f "$HOME/.obsidian-wiki/config.$1" ]] && { echo "$HOME/.obsidian-wiki/config.$1"; return; }
+    echo ""; return   # named vault missing → caller reports + lists, no fallback
+  fi
   dir="$PWD"
   while [[ "$dir" != "$HOME" && "$dir" != "/" ]]; do
     [[ -f "$dir/.env" ]] && grep -q "OBSIDIAN_VAULT_PATH" "$dir/.env" && { echo "$dir/.env"; return; }
@@ -480,7 +558,7 @@ STATE_DIR="$HOME/.obsidian-wiki/state/$VAULT_ID"
 
 Every skill's setup section should read:
 
-> **Resolve config** — follow the Config Resolution Protocol in `llm-wiki/SKILL.md`. Walk up from CWD for `.env`, fall back to `~/.obsidian-wiki/config`, else prompt setup. This gives `OBSIDIAN_VAULT_PATH` and any tool-specific path overrides.
+> **Resolve config** — follow the Config Resolution Protocol in `llm-wiki/SKILL.md`. Honor an inline `@name` override first, then walk up from CWD for `.env`, fall back to `~/.obsidian-wiki/config`, else prompt setup. This gives `OBSIDIAN_VAULT_PATH` and any tool-specific path overrides.
 
 ## Environment Variables
 
@@ -489,6 +567,7 @@ The wiki is configured through environment variables (see `.env.example`). The o
 - `OBSIDIAN_VAULT_PATH` — Where the wiki lives **(required)**
 - `OBSIDIAN_SOURCES_DIR` — Where raw source documents are
 - `OBSIDIAN_CATEGORIES` — Comma-separated list of categories
+- `WIKI_SKIP_PROJECTS` — Comma-separated substrings; any project dir whose name contains one is excluded from history ingest (scan + delta + manifest). See the "Project Scoping" step in the history-ingest skills.
 - `CLAUDE_HISTORY_PATH` — Where to find Claude conversation data
 - `CODEX_HISTORY_PATH` — Where to find Codex session data
 - `HERMES_HOME` — Where to find Hermes agent data
@@ -517,10 +596,9 @@ Use `wiki-status` to see the delta and get a recommendation. Use `wiki-rebuild` 
 For details on specific operations, see the companion skills:
 - **wiki-status** — Audit what's ingested, compute delta, recommend append vs rebuild
 - **wiki-rebuild** — Archive current wiki, rebuild from scratch, or restore from archive
-- **wiki-ingest** — Distill source documents into wiki pages
+- **wiki-ingest** — Distill source documents into wiki pages and raw text/chat/log data
 - **claude-history-ingest** — Ingest Claude conversation history
 - **codex-history-ingest** — Ingest Codex CLI session history
-- **data-ingest** — Ingest any raw text data
 - **wiki-query** — Answer questions against the wiki
 - **wiki-lint** — Audit and maintain wiki health
 - **wiki-setup** — Initialize a new vault

@@ -4,7 +4,8 @@ description: >
   Sync the current project's knowledge into the Obsidian wiki. Use this skill from any project
   when the user says "update wiki", "sync to wiki", "save this to my wiki", "update obsidian",
   or wants to distill what they've been working on into their knowledge base. This is the
-  cross-project skill that lets you push knowledge from wherever you are into the vault.
+  cross-project skill that lets you push knowledge from wherever you are into the vault. Accepts
+  inline named-vault routing like "@work update wiki" via the shared Config Resolution Protocol.
 ---
 
 # Wiki Update — Sync Any Project to Your Wiki
@@ -13,7 +14,7 @@ You are distilling knowledge from the current project into the user's Obsidian w
 
 ## Before You Start
 
-1. **Resolve config** — follow the Config Resolution Protocol in `llm-wiki/SKILL.md` (walk up CWD for `.env` → `~/.obsidian-wiki/config` → prompt setup). This gives `OBSIDIAN_VAULT_PATH`, `OBSIDIAN_WIKI_REPO`, `OBSIDIAN_LINK_FORMAT` (`wikilink` default or `markdown`), and optional QMD settings such as `QMD_WIKI_COLLECTION`. Works from any project directory.
+1. **Resolve config** — follow the Config Resolution Protocol in `llm-wiki/SKILL.md` (inline `@name` override → walk up CWD for `.env` → `~/.obsidian-wiki/config` → prompt setup). This gives `OBSIDIAN_VAULT_PATH`, `OBSIDIAN_WIKI_REPO`, `OBSIDIAN_LINK_FORMAT` (`wikilink` default or `markdown`), and optional QMD settings such as `QMD_WIKI_COLLECTION`. Works from any project directory.
 3. Read `$OBSIDIAN_VAULT_PATH/.manifest.json` to check if this project has been synced before.
 4. Read `$OBSIDIAN_VAULT_PATH/index.md` to know what the wiki already contains.
 
@@ -36,7 +37,12 @@ Derive a clean project name from the directory name.
 Check `.manifest.json` for this project:
 
 - **First time?** Full scan. Everything is new.
-- **Synced before?** Look at `last_commit_synced`. Only consider what changed since then. Use `git log <last_commit>..HEAD --oneline` to see what's new.
+- **Synced before?** Look at `last_commit_synced`. Before computing the delta, verify the stored SHA is still reachable:
+  ```bash
+  git merge-base --is-ancestor <last_commit_synced> HEAD
+  ```
+  - **Exit 0 (ancestor):** Safe. Run `git log <last_commit_synced>..HEAD --oneline` to see what changed.
+  - **Exit 1 (not an ancestor — rebase or force-push occurred):** The stored SHA is no longer in this branch's history. Warn the user: *"Stored commit `<sha>` is no longer reachable — branch may have been rebased or force-pushed. Falling back to full scan."* Then treat as first-time sync: re-scan everything and update `last_commit_synced` to the current HEAD SHA at the end of Step 6.
 
 If nothing meaningful changed since last sync, tell the user and stop.
 

@@ -3,9 +3,11 @@ name: wiki-export
 description: >
   Export the Obsidian wiki's knowledge graph to structured formats for use in external tools.
   Use this skill when the user says "export wiki", "export graph", "export to JSON", "export to Gephi",
-  "export to Neo4j", "graphml", "visualize wiki", "knowledge graph export", or wants to use their
+  "export to Neo4j", "graphml", "visualize wiki", "knowledge graph export", "export to OKF",
+  "OKF bundle", "open knowledge format", "export as markdown bundle", or wants to use their
   wiki data in another tool. Outputs graph.json, graph.graphml, cypher.txt (Neo4j), and graph.html
-  (interactive browser visualization) into a wiki-export/ directory at the vault root.
+  (interactive browser visualization) into a wiki-export/ directory at the vault root, plus an
+  optional OKF (Open Knowledge Format) markdown bundle under wiki-export/okf/.
 ---
 
 # Wiki Export — Knowledge Graph Export
@@ -14,14 +16,28 @@ You are exporting the wiki's wikilink graph to structured formats so it can be u
 
 ## Before You Start
 
-1. **Resolve config** — follow the Config Resolution Protocol in `llm-wiki/SKILL.md` (walk up CWD for `.env` → `~/.obsidian-wiki/config` → prompt setup). This gives `OBSIDIAN_VAULT_PATH`
+1. **Resolve config** — follow the Config Resolution Protocol in `llm-wiki/SKILL.md` (inline `@name` override → walk up CWD for `.env` → `~/.obsidian-wiki/config` → prompt setup). This gives `OBSIDIAN_VAULT_PATH`
 2. Confirm the vault has pages to export — if fewer than 5 pages exist, warn the user and stop
+
+## Project Filter (optional)
+
+If the user's invocation includes a project name — e.g. `/wiki-export prismor`, `"export the prismor project"`, `"export project:security"` — activate **project filter mode**:
+
+1. **Extract the project name** from the argument or phrase. Normalise: lowercase, strip the word "project".
+2. Keep only pages where **either** condition holds:
+   - The page `id` starts with `projects/<name>/` (path-based match)
+   - The page's `tags` array contains `<name>` (tag-based match)
+3. Drop any edge where either endpoint was excluded.
+4. Note the filter in the summary: `(filtered: project:<name> — X of Y pages)`
+5. Set `graph.graph.filter = "project:<name>"` in the JSON output.
+
+If both a project filter and a visibility filter are active, apply both (project filter first, then visibility filter on the remaining set).
 
 ## Visibility Filter (optional)
 
 By default, **all pages are exported** regardless of visibility tags. This preserves existing behavior.
 
-If the user requests a filtered export — phrases like **"public export"**, **"user-facing export"**, **"exclude internal"**, **"no internal pages"** — activate **filtered mode**:
+If the user requests a filtered export — phrases like **"public export"**, **"user-facing export"**, **"exclude internal"**, **"no internal pages"** — activate **visibility filtered mode**:
 
 - Build a **blocked tag set**: `{visibility/internal, visibility/pii}`
 - Skip any page whose frontmatter tags contain a blocked tag when building the node list
@@ -32,7 +48,7 @@ Pages with no `visibility/` tag, or tagged `visibility/public`, are always inclu
 
 ## Step 1: Build the Node and Edge Lists
 
-Glob all `.md` files in the vault (excluding `_archives/`, `_raw/`, `.obsidian/`, `index.md`, `log.md`, `_insights.md`). In filtered mode, also skip pages whose tags contain `visibility/internal` or `visibility/pii`.
+Glob all `.md` files in the vault (excluding `_archives/`, `_raw/`, `.obsidian/`, `index.md`, `log.md`, `_insights.md`). Apply any active filters (project and/or visibility) after collecting the full file list.
 
 For each page, extract from frontmatter:
 - `id` — relative path from vault root, without `.md` extension (e.g. `concepts/transformers`)
@@ -291,6 +307,57 @@ Replace `/* NODES_JSON */` and `/* EDGES_JSON */` with the actual JSON arrays yo
 
 ---
 
+## Step 3.5: OKF Bundle Export (optional)
+
+Run this step **only** when the user asks for OKF / a markdown bundle (phrases like "export to OKF", "OKF bundle", "open knowledge format", "export as markdown bundle"). It is additive — the four graph files above are always produced; this writes an extra full-fidelity markdown bundle.
+
+The four graph files are a *lossy* projection (graph skeleton only). An **OKF bundle is the actual page bodies**, so an export→`wiki-import` round-trip through OKF preserves full content, and the bundle drops straight into MkDocs, Notion, Hugo, GitHub's renderer, or any [Open Knowledge Format](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md) consumer.
+
+### Canonical frontmatter mapping (obsidian-wiki ⇄ OKF)
+
+This table is the single source of truth for the mapping; `wiki-import` references it for the reverse direction.
+
+| OKF key       | ← export from           | → import to              | Notes |
+|---------------|-------------------------|--------------------------|-------|
+| `type` (required) | `category`, title-cased | `category` (lower-cased) | `concepts`→`Concept`, `entities`→`Entity`, `skills`→`Skill`, `references`→`Reference`, `synthesis`→`Synthesis`, `projects`→`Project`, `journal`→`Journal`. OKF requires `type`; consumers tolerate any string. |
+| `title`       | `title`                 | `title`                  | Verbatim. |
+| `description` | `summary`               | `summary`                | Our one-line `summary:` is exactly OKF's `description` (used in `index.md` entries). |
+| `tags`        | `tags`                  | `tags`                   | Verbatim list. `visibility/*` system tags pass through unchanged. |
+| `timestamp`   | `updated`               | `updated`                | ISO 8601 both sides. |
+| `resource`    | first `sources:` entry **iff** it is an `http(s)://` URL | — | Optional; omit when no source URL. Most pages describe abstract knowledge and have none. |
+| *(extensions)* | `category`, `sources`, `created`, `relationships`, `lifecycle`, `tier`, `base_confidence`, … | preserved verbatim | OKF §4.1 permits arbitrary keys and requires consumers to preserve them. **Writing our native keys as OKF extension frontmatter is what makes the round-trip lossless** — on import, preserved `category`/`created`/`sources` are preferred over re-deriving from `type`. |
+
+### Steps
+
+Reuse the node list from Step 1 (with any active project/visibility filters already applied). Write a directory tree under `wiki-export/okf/`:
+
+1. **One file per in-scope page.** For each page, parse its frontmatter, apply the mapping table above to build the OKF frontmatter (required `type` first, then `title`, `description`, `tags`, `timestamp`, optional `resource`, then the preserved extension keys), transform the body links (below), and write to `wiki-export/okf/<category>/<slug>.md` — same relative path the page has in the vault.
+
+2. **Body link transform** (`[[wikilinks]]` → standard markdown links):
+   - `[[concepts/transformers]]` → `[<target title>](<file-relative path>.md)`, e.g. from `entities/foo.md` a link to `concepts/transformers` becomes `[Transformer Architecture](../concepts/transformers.md)`. Link text = the target page's `title` (fall back to the target id if unknown).
+   - `[[target|display]]` → `[display](<rel path>.md)`.
+   - Use **file-relative** paths (`../concepts/x.md`), **never** `/`-absolute — `/`-rooted links break GitHub rendering. (This matches knowledge-catalog's own production agent.)
+   - Compute that relative path from the **target file path**, not the bare page id: normalize the wikilink target to its page id, append `.md`, then compute `relpath(<target-file>, <source-file-dir>)`. Never call `relpath()` on the id before adding `.md`.
+   - This is required for the common "folder note" layout where a page id exists both as a file and as a directory prefix, e.g. `projects/social-twitter.md` plus `projects/social-twitter/...`. From `projects/social-twitter/concepts/mem0-memory-analysis.md`, a link to `[[projects/social-twitter]]` must export to `../../social-twitter.md`, not `...md`.
+   - Resolve link targets with the same normalization used in Step 1 (lowercase, spaces→hyphens, strip `.md`). Handle unresolved targets by form, so forward-references survive the round-trip:
+     - **Resolves to an in-scope page** → relative markdown link to it.
+     - **Path-form target** (contains a `/`, e.g. `[[concepts/attention-mechanism]]`) with **no page yet**, and not excluded by an active filter → still emit the relative markdown link. OKF §5.3 treats a missing target as not-yet-written knowledge, and keeping the link makes the user's forward-references lossless on re-import. (Verified on st3ve: dropping these silently deleted real `[[wikilinks]]`.)
+     - **Excluded by an active project/visibility filter** → plain text. Do not emit a path pointing into filtered-out content.
+     - **Bare-title target** with no match (e.g. `[[tractorex]]` when no such page exists in scope) → plain text; there is no reliable path to write.
+   - Leave existing external `http(s)://` links and `# Citations` sections untouched.
+
+3. **Generate `index.md` files** (OKF §6 progressive disclosure; these contain no per-entry frontmatter):
+   - Bundle root `wiki-export/okf/index.md` — a `# Subdirectories` section listing each category folder: `* [<category>](<category>/index.md) - <one-line description of the category>`. This is the **only** index permitted frontmatter: add a single key `okf_version: "0.1"` (OKF §11).
+   - One `index.md` per category folder listing its pages: `* [<title>](<slug>.md) - <description from the page's summary>`.
+
+4. **Copy `log.md`** from the vault root to `wiki-export/okf/log.md` as-is (OKF §7 treats the leading bold action word as convention, so the existing line-based log is conformant).
+
+5. **Filters.** Honor the same project/visibility filters as the graph export — filtered pages are omitted from the bundle and their inbound links degrade to plain text per step 2.
+
+Excluded from the bundle (same as the graph export): `_archives/`, `_raw/`, `.obsidian/`, `_insights.md`, `_meta/*.base`, and the vault root `index.md` (regenerated above).
+
+---
+
 ## Step 4: Print Summary
 
 ```
@@ -301,14 +368,22 @@ Wiki export complete → wiki-export/
   graph.html    — interactive browser visualization (open in any browser)
 ```
 
-In filtered mode, append a line showing what was excluded:
+Append this line only when the OKF bundle was produced (Step 3.5):
 ```
+  okf/          — OKF v0.1 markdown bundle (N pages, lossless; import via wiki-import)
+```
+
+Append filter notes when active:
+```
+  (filtered: project:prismor — 19 of 67 pages)
   (filtered: X of Y pages excluded — visibility/internal, visibility/pii)
 ```
+Only include lines for filters that were actually applied.
 
 ## Notes
 
-- **Re-running is safe** — all output files are overwritten on each run
-- **Broken wikilinks are skipped** — only edges to pages that exist in the vault are exported
+- **Re-running is safe** — all output files (and the `okf/` bundle) are overwritten on each run
+- **Broken wikilinks are skipped** — only edges to pages that exist in the vault are exported; in the OKF bundle, a wikilink to a missing/filtered page degrades to plain text
+- **OKF is the lossless format** — `graph.json` reconstructs only stubs on import, while the `okf/` bundle preserves full page bodies. Use OKF for vault-to-vault transfer and external markdown tools (MkDocs, Notion, GitHub); use the graph files for analysis tools (Gephi, Neo4j)
 - **The `wiki-export/` directory should be gitignored** if the vault is version-controlled — these are derived artifacts
 - **`graph.json` is the primary format** — the others are derived from it. If a future tool supports graph queries natively, point it at `graph.json`
