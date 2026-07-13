@@ -74,6 +74,7 @@ $OBSIDIAN_VAULT_PATH/
 ├── _meta/            # taxonomy.md (tag vocabulary) + *.base dashboards
 ├── _insights.md      # Graph analysis output
 ├── _raw/             # Staging — rough notes promoted on next ingest
+├── _readouts/        # Narrative readouts from wiki-narrate — not knowledge pages
 ├── concepts/ entities/ skills/ references/ synthesis/ journal/
 └── projects/<name>.md  # One page per project synced via wiki-update
 ```
@@ -100,6 +101,7 @@ Skills live in `.skills/<name>/SKILL.md`. Match intent to skill:
 | "what's the status" / "what's been ingested" / "show the delta" | `wiki-status` |
 | "wiki insights" / "hubs" / "wiki structure" | `wiki-status` (insights mode) |
 | "what do I know about X" / "find info on Y" / any question | `wiki-query` |
+| "narrate" / "briefing" / "explain this topic" / "/wiki-narrate" | `wiki-narrate` |
 | "audit" / "lint" / "find broken links" / "wiki health" | `wiki-lint` |
 | "dedup my wiki" / "find duplicate pages" / "merge duplicates" / "identity resolution" / "consolidate my wiki" | `wiki-dedup` |
 | "rebuild" / "start over" / "archive" / "restore" | `wiki-rebuild` |
@@ -124,6 +126,7 @@ Skills live in `.skills/<name>/SKILL.md`. Match intent to skill:
 | "/wiki-digest" / "what did I learn this week" / "weekly digest" / "knowledge summary" / "what's new in my wiki" / "summarize my recent learning" / "monthly review" | `wiki-digest` |
 | "/wiki-stage-commit" / "review staged pages" / "commit staged writes" | `wiki-stage-commit` |
 | "/wiki-context-pack" / "context slice for X" | `wiki-context-pack` |
+| "restyle Obsidian" / "adjust the vault layout" / "CSS snippet" / "tune tabs/sidebars/graph panes" | `obsidian-layout-adjustment` |
 | wiki pattern theory / architecture questions | `llm-wiki` |
 
 ## Cross-Project Usage
