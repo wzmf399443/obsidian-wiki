@@ -78,30 +78,10 @@ Organize all findings into wiki pages across four output areas:
 
 ### 1. sources/ — One page per major reference
 
-For each significant source (typically 4-8 pages total):
+For each significant source (typically 4-8 pages total), use the canonical Page Template frontmatter from `llm-wiki/SKILL.md` (Page Template section), with these source-page specifics:
 
-```yaml
----
-title: >-
-  <Source title>
-category: references
-tags: [<2-4 domain tags>]
-sources:
-  - "<URL>"
-source_url: "<URL>"
-created: <ISO-8601 timestamp>
-updated: <ISO-8601 timestamp>
-summary: >-
-  <1-2 sentences describing what this source covers, ≤200 chars>
-provenance:
-  extracted: 0.X
-  inferred: 0.X
-  ambiguous: 0.X
-base_confidence: <0.17 + 0.5 × classify(url) for a single source>
-lifecycle: draft
-lifecycle_changed: <ISO date today>
----
-```
+- `category: references`; `sources: ["<URL>"]` plus a dedicated `source_url: "<URL>"` field
+- `base_confidence: <0.17 + 0.5 × classify(url) for a single source>`; `lifecycle: draft`
 
 Body: title, URL, what it covers, key claims (with provenance markers), limitations.
 
@@ -121,28 +101,16 @@ Standard entity frontmatter. Link back to concepts that use the entity and sourc
 
 Filename is the lowercase-hyphenated topic slug (e.g. `synthesis/research-rust-async-runtimes.md`) — colons and spaces are not portable across filesystems.
 
-The primary output: a structured synthesis of everything found.
+The primary output: a structured synthesis of everything found. Use the canonical Page Template frontmatter from `llm-wiki/SKILL.md` (Page Template section), with these synthesis specifics:
 
-```yaml
----
-title: >-
-  Research: <Topic>
-category: synthesis
-tags: [<3-5 domain tags>, research]
-sources: [<list of source URLs or page paths>]
-created: <ISO-8601 timestamp>
-updated: <ISO-8601 timestamp>
-summary: >-
-  Synthesis of <N>-round research on <topic>. Covers <core findings in ≤200 chars>.
-provenance:
-  extracted: 0.X
-  inferred: 0.X
-  ambiguous: 0.X
-base_confidence: <min(N_unique_sources/3,1.0)×0.5 + avg_source_quality×0.5>
-lifecycle: draft
-lifecycle_changed: <ISO date today>
----
+- `title: >-` folded scalar holding `Research: <Topic>`; `category: synthesis`; `tags`: 3-5 domain tags plus `research`
+- `sources`: list of source URLs or page paths
+- `summary`: "Synthesis of <N>-round research on <topic>. Covers <core findings in ≤200 chars>."
+- `base_confidence: <min(N_unique_sources/3,1.0)×0.5 + avg_source_quality×0.5>`; `lifecycle: draft`
 
+Body structure:
+
+```markdown
 # Research: <Topic>
 
 ## Overview
@@ -209,35 +177,4 @@ Check `index.md` for existing pages on the same topics — merge into existing p
 
 ## QMD Refresh After Vault Writes
 
-QMD is a search index, not the source of truth. If `$QMD_WIKI_COLLECTION` is empty or unset, skip this step. Run it only after this skill has written or rewritten vault markdown. If QMD refresh fails, do not roll back the vault changes; report the QMD status separately.
-
-Use `$QMD_CLI` if set; otherwise use `qmd`.
-
-```bash
-${QMD_CLI:-qmd} update
-```
-
-If the output says vectors are needed or embeddings may be stale, run:
-
-```bash
-${QMD_CLI:-qmd} embed
-```
-
-Verify the collection with either:
-
-```bash
-${QMD_CLI:-qmd} ls "$QMD_WIKI_COLLECTION"
-```
-
-or, when a specific page path is known:
-
-```bash
-${QMD_CLI:-qmd} get "qmd://$QMD_WIKI_COLLECTION/<page>.md" -l 5
-```
-
-Record one of:
-- `QMD refreshed: update + embed + verified`
-- `QMD refreshed: update only + verified`
-- `QMD skipped: QMD_WIKI_COLLECTION unset`
-- `QMD skipped: qmd CLI unavailable`
-- `QMD failed: <short error summary>`
+If `$QMD_WIKI_COLLECTION` is set, follow the shared procedure in `.skills/_shared/qmd-refresh.md` after writing vault markdown and record the QMD status line it defines. If unset, record `QMD skipped: QMD_WIKI_COLLECTION unset`.

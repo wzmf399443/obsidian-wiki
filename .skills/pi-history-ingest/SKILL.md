@@ -18,24 +18,13 @@ This skill can be invoked directly or via the `wiki-history-ingest` router (`/wi
 
 ## Before You Start
 
-1. **Resolve config** — follow the Config Resolution Protocol in `llm-wiki/SKILL.md` (inline `@name` override → walk up CWD for `.env` → `~/.obsidian-wiki/config` → prompt setup). This gives `OBSIDIAN_VAULT_PATH` and `PI_HISTORY_PATH` (defaults to `~/.pi/agent/sessions`)
-2. Read `.manifest.json` at the vault root to check what has already been ingested
-3. Read `index.md` at the vault root to understand what the wiki already contains
+Follow the shared **Before You Start (config)** steps in `.skills/_shared/history-ingest-common.md`. This skill's history-path variable is `PI_HISTORY_PATH` (defaults to `~/.pi/agent/sessions`).
+
+**Shared pipeline** (modes, clustering, distillation routing, writing rules, manifest/bookkeeping, privacy): read `.skills/_shared/history-ingest-common.md` before Step 1; this file only documents what is specific to Pi.
 
 ## Ingest Modes
 
-### Append Mode (default)
-
-Check `.manifest.json` for each source file. Only process:
-
-- Files not in the manifest (new sessions)
-- Files whose modification time is newer than `ingested_at` in the manifest
-
-Use this mode for regular syncs.
-
-### Full Mode
-
-Process everything regardless of manifest. Use after `wiki-rebuild` or if the user explicitly asks for a full re-ingest.
+Append/Full mode semantics are shared — see `.skills/_shared/history-ingest-common.md` (Ingest Modes).
 
 ## Pi Data Layout
 
@@ -166,55 +155,32 @@ Session logs can include injected instructions, tool payloads, and sensitive tex
 
 ## Step 3: Cluster by Topic
 
-Do not create one wiki page per session.
+General clustering guidance is shared — see `.skills/_shared/history-ingest-common.md` (Cluster by Topic). Pi-specific constraints:
 
-- Group knowledge by stable topic across many sessions
-- Split mixed sessions into separate themes
-- Merge recurring patterns across dates and projects **only when each pattern member has evidence ledger references**
-- Use the `cwd` from the session header to infer project scope
-- Use `session_info.name` as a topic hint when available
-- Drop any cluster whose key claims cannot be traced back to the selected session files
+- Use the `cwd` from the session header to infer project scope; use `session_info.name` as a topic hint when available.
+- Merge recurring patterns across dates and projects **only when each pattern member has evidence ledger references**.
+- Drop any cluster whose key claims cannot be traced back to the selected session files.
 
 ## Step 4: Distill into Wiki Pages
 
-Route extracted knowledge using existing wiki conventions:
+Routing, project-page naming, and the base writing rules (`summary:` / `base_confidence` / `lifecycle` frontmatter) are shared — see `.skills/_shared/history-ingest-common.md` (Distill into Wiki Pages). Pi derives the project name from the decoded session `cwd`.
 
-- Project-specific architecture/process → `projects/<name>/...`
-- General concepts → `concepts/`
-- Recurring techniques/debug playbooks → `skills/`
-- Tools/services/frameworks → `entities/`
-- Cross-session patterns → `synthesis/`
+Pi adds and overrides the following on top of the shared writing rules:
 
-For each impacted project, create/update `projects/<name>/<name>.md`.
-
-### Writing rules
-
-- Distill knowledge, not chronology
-- Avoid "on date X we discussed..." unless date context is essential
 - Preserve session-specific decision context when it explains why an approach was chosen; do not flatten it into generic tool advice.
-- Add `summary:` frontmatter on each new/updated page (1–2 sentences, ≤ 200 chars)
-- Add confidence and lifecycle fields to every new page:
-  ```yaml
-  base_confidence: 0.42
-  lifecycle: draft
-  lifecycle_changed: <ISO date today>
-  ```
-  Leave `lifecycle` unchanged on update.
-- Add provenance markers using the convention in `llm-wiki`:
+- **Provenance is evidence-based (Pi override of the shared marker rules):**
   - Extracted claims use no inline marker by default, but must have a nearby source reference comment.
   - `^[inferred]` when synthesizing patterns across multiple sessions or inferring from tool calls.
   - `^[ambiguous]` when sessions conflict or a compaction summary contradicts later turns.
+  - `compaction` and `branch_summary` entries are pre-distilled — treat as mostly extracted, with source reference comments.
+  - Conversation distillation is mostly `^[inferred]` — you're synthesizing from dialogue, and it still needs source references to the turns that support the synthesis.
+  - Use `^[ambiguous]` when the user changed their mind across sessions or when compaction summaries disagree with later conversation turns.
 - Add a source reference comment near every extracted paragraph or bullet:
   ```markdown
   - Durable fact from the session. <!-- source: pi:2026-06-01T120000_abcd.jsonl#entry-123 -->
   ```
   Multiple sources are comma-separated. These comments are the audit trail; do not omit them for extracted claims.
 - Add/update `provenance:` frontmatter mix for each changed page.
-
-**Mark provenance** per the convention in `llm-wiki`:
-- `compaction` and `branch_summary` entries are pre-distilled — treat as mostly extracted, with source reference comments.
-- Conversation distillation is mostly `^[inferred]` — you're synthesizing from dialogue, and it still needs source references to the turns that support the synthesis.
-- Use `^[ambiguous]` when the user changed their mind across sessions or when compaction summaries disagree with later conversation turns.
 
 ### Source verification gate
 
@@ -228,46 +194,32 @@ Before writing any page, verify the draft against the evidence ledger:
 
 ## Step 5: Update Manifest, Log, and Index
 
-### Update `.manifest.json`
+Follow the shared **Update Manifest, Log, and Index** procedure (`.skills/_shared/history-ingest-common.md`). Pi specifics:
 
-For each processed source file:
-
-- `ingested_at`, `size_bytes`, `modified_at`
 - `source_type`: `pi_session`
 - `project`: inferred project name from decoded `cwd`
-- `pages_created`, `pages_updated`
-
-Add/update a top-level summary block:
-
-```json
-{
-  "pi": {
-    "source_path": "~/.pi/agent/sessions/",
-    "last_ingested": "TIMESTAMP",
-    "sessions_ingested": 12,
-    "sessions_total": 40,
-    "pages_created": 5,
-    "pages_updated": 12
+- Top-level summary block:
+  ```json
+  {
+    "pi": {
+      "source_path": "~/.pi/agent/sessions/",
+      "last_ingested": "TIMESTAMP",
+      "sessions_ingested": 12,
+      "sessions_total": 40,
+      "pages_created": 5,
+      "pages_updated": 12
+    }
   }
-}
-```
+  ```
+- Log line for `log.md`:
+  ```
+  - [TIMESTAMP] PI_HISTORY_INGEST sessions=N pages_updated=X pages_created=Y mode=append|full
+  ```
+- hot.md sample sentence: "Ingested 12 Pi sessions across 3 projects; surfaced patterns in CLI tooling and API design."
 
-### Update special files
+## Privacy
 
-Update `index.md` and `log.md`:
-
-```
-- [TIMESTAMP] PI_HISTORY_INGEST sessions=N pages_updated=X pages_created=Y mode=append|full
-```
-
-**`hot.md`** — Read `$OBSIDIAN_VAULT_PATH/hot.md` (create from the template in `wiki-ingest` if missing). Update **Recent Activity** with a one-line summary — e.g. "Ingested 12 Pi sessions across 3 projects; surfaced patterns in CLI tooling and API design." Keep the last 3 operations. Update `updated` timestamp.
-
-## Privacy and Compliance
-
-- Distill and synthesize; avoid raw transcript dumps
-- Default to redaction for anything that looks sensitive
-- Ask the user before storing personal or sensitive details
-- Keep references to other people minimal and purpose-bound
+See shared **Privacy** in `.skills/_shared/history-ingest-common.md`. Session-specific redaction rules are in the Step 2 "Critical privacy filter" above.
 
 ## Reference
 
@@ -275,35 +227,4 @@ See `references/pi-data-format.md` for field-level parsing notes and extraction 
 
 ## QMD Refresh After Vault Writes
 
-QMD is a search index, not the source of truth. If `$QMD_WIKI_COLLECTION` is empty or unset, skip this step. Run it only after this skill has written or rewritten vault markdown. If QMD refresh fails, do not roll back the vault changes; report the QMD status separately.
-
-Use `$QMD_CLI` if set; otherwise use `qmd`.
-
-```bash
-${QMD_CLI:-qmd} update
-```
-
-If the output says vectors are needed or embeddings may be stale, run:
-
-```bash
-${QMD_CLI:-qmd} embed
-```
-
-Verify the collection with either:
-
-```bash
-${QMD_CLI:-qmd} ls "$QMD_WIKI_COLLECTION"
-```
-
-or, when a specific page path is known:
-
-```bash
-${QMD_CLI:-qmd} get "qmd://$QMD_WIKI_COLLECTION/<page>.md" -l 5
-```
-
-Record one of:
-- `QMD refreshed: update + embed + verified`
-- `QMD refreshed: update only + verified`
-- `QMD skipped: QMD_WIKI_COLLECTION unset`
-- `QMD skipped: qmd CLI unavailable`
-- `QMD failed: <short error summary>`
+If `$QMD_WIKI_COLLECTION` is set, follow the shared procedure in `.skills/_shared/qmd-refresh.md` after writing vault markdown and record the QMD status line it defines. If unset, record `QMD skipped: QMD_WIKI_COLLECTION unset`.

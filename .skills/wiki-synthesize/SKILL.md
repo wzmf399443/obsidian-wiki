@@ -66,26 +66,16 @@ Pick the top 5 candidates. If the user asked for a specific topic ("synthesize e
 
 ## Step 4: Draft Synthesis Pages
 
-For each top candidate, create a page in `synthesis/` using this template:
+For each top candidate, create a page in `synthesis/` with the canonical Page Template frontmatter from `llm-wiki/SKILL.md` (Page Template section), with these synthesis-specific values:
+
+- `title`: `<Concept A> × <Concept B>`; `category: synthesis`; `tags`: shared + domain tags
+- `sources`: all pages that link to both concepts
+- `provenance`: synthesis is mostly inferred — around `extracted: 0.2, inferred: 0.7, ambiguous: 0.1`
+- `base_confidence`: `min(base_confidence of all input pages)`; `lifecycle: draft`
+
+Body structure:
 
 ```markdown
----
-title: <Concept A> × <Concept B>
-category: synthesis
-tags: [<shared tags>, <domain tags>]
-sources: [<all pages that link to both>]
-created: TIMESTAMP
-updated: TIMESTAMP
-summary: "Cross-cutting synthesis of how <A> and <B> interact, with implications for <domain>."
-provenance:
-  extracted: 0.2
-  inferred: 0.7
-  ambiguous: 0.1
-base_confidence: <min(base_confidence of all input pages)>
-lifecycle: draft
-lifecycle_changed: TIMESTAMP_DATE
----
-
 # <Concept A> × <Concept B>
 
 ## The Connection
@@ -175,35 +165,4 @@ Skipped (consider next time):
 
 ## QMD Refresh After Vault Writes
 
-QMD is a search index, not the source of truth. If `$QMD_WIKI_COLLECTION` is empty or unset, skip this step. Run it only after this skill has written or rewritten vault markdown. If QMD refresh fails, do not roll back the vault changes; report the QMD status separately.
-
-Use `$QMD_CLI` if set; otherwise use `qmd`.
-
-```bash
-${QMD_CLI:-qmd} update
-```
-
-If the output says vectors are needed or embeddings may be stale, run:
-
-```bash
-${QMD_CLI:-qmd} embed
-```
-
-Verify the collection with either:
-
-```bash
-${QMD_CLI:-qmd} ls "$QMD_WIKI_COLLECTION"
-```
-
-or, when a specific page path is known:
-
-```bash
-${QMD_CLI:-qmd} get "qmd://$QMD_WIKI_COLLECTION/<page>.md" -l 5
-```
-
-Record one of:
-- `QMD refreshed: update + embed + verified`
-- `QMD refreshed: update only + verified`
-- `QMD skipped: QMD_WIKI_COLLECTION unset`
-- `QMD skipped: qmd CLI unavailable`
-- `QMD failed: <short error summary>`
+If `$QMD_WIKI_COLLECTION` is set, follow the shared procedure in `.skills/_shared/qmd-refresh.md` after writing vault markdown and record the QMD status line it defines. If unset, record `QMD skipped: QMD_WIKI_COLLECTION unset`.

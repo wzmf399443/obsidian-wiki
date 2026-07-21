@@ -211,7 +211,7 @@ Build the HTML file by:
 ```js
 {id: "concepts/transformers", label: "Transformer Architecture", color: {background: "#4E79A7"}, size: <degree * 3 + 8>, title: "concepts | #ml #architecture", community: 0}
 ```
-- Color by community (cycle through: `#4E79A7`, `#F28E2B`, `#E15759`, `#76B7B2`, `#59A14F`, `#EDC948`, `#B07AA1`, `#FF9DA7`, `#9C755F`, `#BAB0AC`)
+- Color by community — cycle through the 10-color palette in `.skills/_shared/palette.md` (Hex column, in order)
 - Size by degree (incoming + outgoing link count): `size = degree * 3 + 8`, capped at 60
 - `title` = tooltip text shown on hover: category, tags, summary (if available)
 
@@ -271,7 +271,7 @@ Untyped `wikilink` edges keep the existing `#666` grey color and no label.
 <script>
 const NODES_DATA = /* NODES_JSON */;
 const EDGES_DATA = /* EDGES_JSON */;
-const COMMUNITY_COLORS = ["#4E79A7","#F28E2B","#E15759","#76B7B2","#59A14F","#EDC948","#B07AA1","#FF9DA7","#9C755F","#BAB0AC"];
+const COMMUNITY_COLORS = [/* fill with the 10 hex values from .skills/_shared/palette.md, in table order */];
 
 const nodes = new vis.DataSet(NODES_DATA);
 const edges = new vis.DataSet(EDGES_DATA);

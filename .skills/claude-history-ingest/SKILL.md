@@ -16,21 +16,17 @@ This skill can be invoked directly or via the `wiki-history-ingest` router (`/wi
 
 ## Before You Start
 
-1. **Resolve config** — follow the Config Resolution Protocol in `llm-wiki/SKILL.md` (inline `@name` override → walk up CWD for `.env` → `~/.obsidian-wiki/config` → prompt setup). This gives `OBSIDIAN_VAULT_PATH` and `CLAUDE_HISTORY_PATH` (defaults to `~/.claude`)
-2. Read `.manifest.json` at the vault root to check what's already been ingested
-3. Read `index.md` at the vault root to know what the wiki already contains
-4. **Project Scoping** — read `WIKI_SKIP_PROJECTS` from config (comma-separated substrings). Exclude any project directory whose name contains one of them from **every** step below (scan, delta, sampling, manifest writes). If the user names extra projects to skip this run, add them. Apply the exclusion **once, uniformly** — don't hand-write `grep -v` filters into individual commands, which drifts between the scan and manifest steps.
+Follow the shared **Before You Start (config)** steps in `.skills/_shared/history-ingest-common.md`. This skill's history-path variable is `CLAUDE_HISTORY_PATH` (defaults to `~/.claude`).
+
+**Project Scoping (Claude-specific)** — read `WIKI_SKIP_PROJECTS` from config (comma-separated substrings). Exclude any project directory whose name contains one of them from **every** step below (scan, delta, sampling, manifest writes). If the user names extra projects to skip this run, add them. Apply the exclusion **once, uniformly** — don't hand-write `grep -v` filters into individual commands, which drifts between the scan and manifest steps.
+
+**Shared pipeline** (modes, clustering, distillation routing, writing rules, manifest/bookkeeping, privacy): read `.skills/_shared/history-ingest-common.md` before Step 1; this file only documents what is specific to Claude.
 
 ## Ingest Modes
 
-### Append Mode (default)
+Append/Full mode semantics are shared — see `.skills/_shared/history-ingest-common.md` (Ingest Modes). Claude-specific append-mode delta notes (canonical paths), plus pre-extraction and conversation sampling, follow.
 
-Check `.manifest.json` for each source file (conversation JSONL, memory file). Only process:
-
-- Files not in the manifest (new conversations, new memory files, new projects)
-- Files whose modification time is newer than their `ingested_at` in the manifest
-
-This is usually what you want — the user ran a few new sessions and wants to capture the delta.
+### Canonical paths when comparing (Claude append-mode delta)
 
 > **Canonical paths when comparing.** The manifest keys are absolute paths with `~` expanded (see `llm-wiki/SKILL.md` → `.manifest.json`). Before deciding a file is "new", expand its path the same way — otherwise a file already tracked as `~/.claude/...` looks new when you scanned it as `/Users/me/.claude/...` (or vice-versa) and gets re-ingested. The `scripts/manifest.py` helper does this for you:
 >
@@ -98,10 +94,6 @@ A history path can hold hundreds of conversation JSONLs — do not try to read t
   read 5–10 in the same token budget as 1 raw JSONL.
 - Always report what you sampled vs skipped (e.g. "agenttower: 7 memory files + 4 new conversations
   ingested, 14 unchanged conversations skipped"), so the coverage gap is visible rather than silent.
-
-### Full Mode
-
-Process everything regardless of manifest. Use after a `wiki-rebuild` or if the user explicitly asks.
 
 ## Claude Code Data Layout
 
@@ -327,98 +319,52 @@ Read the paired `local_<uuid>.json` session metadata before processing the audit
 
 ## Step 4: Cluster by Topic
 
-Don't create one wiki page per conversation. Instead:
-
-- Group extracted knowledge **by topic** across conversations
-- A single conversation about "debugging auth + setting up CI" → two separate topics
-- Three conversations across different days about "React performance" → one merged topic
-- The project directory name gives you a natural first-level grouping
+General clustering guidance is shared — see `.skills/_shared/history-ingest-common.md` (Cluster by Topic). Claude-specific: the project directory name (from `~/.claude/projects/`) gives you a natural first-level grouping.
 
 ## Step 5: Distill into Wiki Pages
 
-Each Claude project maps to a project directory in the vault. The project directory name from `~/.claude/projects/` encodes the original path — decode it to get a clean project name:
+Routing, project-page naming, writing rules, and the generic provenance markers are shared — see `.skills/_shared/history-ingest-common.md` (Distill into Wiki Pages). Claude specifics:
 
-```
--Users/Documents/projects/my-Project   → myproject
--Users/Documents/projects/Another-app  → anotherapp
-```
-
-### Project-specific vs. global knowledge
-
-| What you found                     | Where it goes               | Example                                             |
-| ---------------------------------- | --------------------------- | --------------------------------------------------- |
-| Project architecture decisions     | `projects/<name>/concepts/` | `projects/my-project/concepts/main-architecture.md` |
-| Project-specific debugging         | `projects/<name>/skills/`   | `projects/my-project/skills/api-rate-limiting.md`   |
-| General concept the user learned   | `concepts/` (global)        | `concepts/react-server-components.md`               |
-| Recurring problem across projects  | `skills/` (global)          | `skills/debugging-hydration-errors.md`              |
-| A tool/service used                | `entities/` (global)        | `entities/vercel-functions.md`                      |
-| Patterns across many conversations | `synthesis/` (global)       | `synthesis/common-debugging-patterns.md`            |
-
-For each project with content, create or update the project overview page at `projects/<name>/<name>.md` — **named after the project, not `_project.md`**. Obsidian's graph view uses the filename as the node label, so `_project.md` makes every project show up as `_project` in the graph. Naming it `<name>.md` gives each project a distinct, readable node name.
-
-**Important:** Distill the _knowledge_, not the conversation. Don't write "In a conversation on March 15, the user asked about X." Write the knowledge itself, with the conversation as a source attribution.
-
-**Write a `summary:` frontmatter field** on every new/updated page — 1–2 sentences, ≤200 chars, answering "what is this page about?" for a reader who hasn't opened it. `wiki-query`'s cheap retrieval path reads this field to avoid opening page bodies.
-
-**Add confidence and lifecycle fields** to every new page's frontmatter:
-```yaml
-base_confidence: 0.42
-lifecycle: draft
-lifecycle_changed: <ISO date today>
-```
-On update, leave `lifecycle` and `lifecycle_changed` unchanged — only a human editor transitions lifecycle state.
-
-**Mark provenance** per the convention in `llm-wiki` (Provenance Markers section):
-
-- **Memory files** are mostly extracted — the user wrote them by hand and they're already distilled. Treat memory-derived claims as extracted unless you're stitching together claims from multiple memory files.
-- **Conversation distillation** is mostly inferred. You're synthesizing a coherent claim from many turns of dialogue, often filling in implicit reasoning. Apply `^[inferred]` liberally to synthesized patterns, generalizations across sessions, and "what the user really meant" interpretations.
-- Use `^[ambiguous]` when the user changed their mind across sessions or when assistant and user contradicted each other and the resolution is unclear.
-- Write a `provenance:` frontmatter block on every new/updated page summarizing the rough mix.
+- **Project name derivation** — each Claude project maps to a project directory in the vault. The project directory name from `~/.claude/projects/` encodes the original path — decode it to get a clean project name:
+  ```
+  -Users/Documents/projects/my-Project   → myproject
+  -Users/Documents/projects/Another-app  → anotherapp
+  ```
+- **Provenance mapping (Claude source types):**
+  - **Memory files** are mostly extracted — the user wrote them by hand and they're already distilled. Treat memory-derived claims as extracted unless you're stitching together claims from multiple memory files.
+  - **Conversation distillation** is mostly inferred. You're synthesizing a coherent claim from many turns of dialogue, often filling in implicit reasoning. Apply `^[inferred]` liberally to synthesized patterns, generalizations across sessions, and "what the user really meant" interpretations.
+  - Use `^[ambiguous]` when the user changed their mind across sessions or when assistant and user contradicted each other and the resolution is unclear.
 
 ## Step 6: Update Manifest, Journal, and Special Files
 
-### Update `.manifest.json`
+Follow the shared **Update Manifest, Log, and Index** procedure (`.skills/_shared/history-ingest-common.md`). Claude specifics:
 
-For each source file processed, add/update its entry with:
-
-- `ingested_at`, `size_bytes`, `modified_at`
 - `source_type`: one of `"claude_conversation"`, `"claude_memory"`, `"claude_audit_log"`, `"claude_desktop_session"`
-- `project`: the decoded project name
-- `pages_created` and `pages_updated` lists
-
-Also update the `projects` section of the manifest:
-
-```json
-{
-  "project-name": {
-    "source_path": "~/.claude/projects/-Users-...",
-    "vault_path": "projects/project-name",
-    "last_ingested": "TIMESTAMP",
-    "conversations_ingested": 5,
-    "conversations_total": 8,
-    "memory_files_ingested": 3,
-    "desktop_sessions_ingested": 2,
-    "audit_logs_ingested": 2
+- `project`: the decoded project name; plus `pages_created` and `pages_updated` lists.
+- Top-level `projects` block:
+  ```json
+  {
+    "project-name": {
+      "source_path": "~/.claude/projects/-Users-...",
+      "vault_path": "projects/project-name",
+      "last_ingested": "TIMESTAMP",
+      "conversations_ingested": 5,
+      "conversations_total": 8,
+      "memory_files_ingested": 3,
+      "desktop_sessions_ingested": 2,
+      "audit_logs_ingested": 2
+    }
   }
-}
-```
-
-### Create journal entry + update special files
-
-Update `index.md` and `log.md` per the standard process:
-
-```
-- [TIMESTAMP] CLAUDE_HISTORY_INGEST projects=N conversations=M desktop_sessions=D audit_logs=A pages_updated=X pages_created=Y mode=append|full
-```
-
-**`hot.md`** — Read `$OBSIDIAN_VAULT_PATH/hot.md` (create from the template in `wiki-ingest` if missing). Update **Recent Activity** with a one-line summary — e.g. "Ingested 5 Claude conversations across 2 projects; surfaced patterns in API design and testing strategy." Keep the last 3 operations. Update **Active Threads** if any ongoing project is now better understood. **Update the `updated:` field in the frontmatter** to the current timestamp — this is easy to forget; the body edit and the frontmatter bump must both happen.
+  ```
+- Log line for `log.md`:
+  ```
+  - [TIMESTAMP] CLAUDE_HISTORY_INGEST projects=N conversations=M desktop_sessions=D audit_logs=A pages_updated=X pages_created=Y mode=append|full
+  ```
+- hot.md sample sentence: "Ingested 5 Claude conversations across 2 projects; surfaced patterns in API design and testing strategy." (Also update **Active Threads** if any ongoing project is now better understood.)
 
 ## Privacy
 
-- Distill and synthesize — don't copy raw conversation text verbatim
-- Skip anything that looks like secrets, API keys, passwords, tokens
-- If you encounter personal/sensitive content, ask the user before including it
-- The user's conversations may reference other people — be thoughtful about what goes in the wiki
+See shared **Privacy** in `.skills/_shared/history-ingest-common.md`.
 
 ## Reference
 
@@ -426,35 +372,4 @@ See `references/claude-data-format.md` for more details on the data structures.
 
 ## QMD Refresh After Vault Writes
 
-QMD is a search index, not the source of truth. If `$QMD_WIKI_COLLECTION` is empty or unset, skip this step. Run it only after this skill has written or rewritten vault markdown. If QMD refresh fails, do not roll back the vault changes; report the QMD status separately.
-
-Use `$QMD_CLI` if set; otherwise use `qmd`.
-
-```bash
-${QMD_CLI:-qmd} update
-```
-
-If the output says vectors are needed or embeddings may be stale, run:
-
-```bash
-${QMD_CLI:-qmd} embed
-```
-
-Verify the collection with either:
-
-```bash
-${QMD_CLI:-qmd} ls "$QMD_WIKI_COLLECTION"
-```
-
-or, when a specific page path is known:
-
-```bash
-${QMD_CLI:-qmd} get "qmd://$QMD_WIKI_COLLECTION/<page>.md" -l 5
-```
-
-Record one of:
-- `QMD refreshed: update + embed + verified`
-- `QMD refreshed: update only + verified`
-- `QMD skipped: QMD_WIKI_COLLECTION unset`
-- `QMD skipped: qmd CLI unavailable`
-- `QMD failed: <short error summary>`
+If `$QMD_WIKI_COLLECTION` is set, follow the shared procedure in `.skills/_shared/qmd-refresh.md` after writing vault markdown and record the QMD status line it defines. If unset, record `QMD skipped: QMD_WIKI_COLLECTION unset`.

@@ -169,39 +169,13 @@ When to run:
 | Archive + Rebuild | Required after clearing live wiki | QMD must forget deleted pages or it will return stale search results. Later ingest skills will refresh again as sources are reprocessed. |
 | Restore | Required after restore | The live wiki was replaced with archive content, so QMD must match the restored state. |
 
-This refresh currently requires the local QMD CLI. Use `$QMD_CLI` if set; otherwise use `qmd`. If the CLI is unavailable, report `QMD skipped: qmd CLI unavailable`.
-
-For CLI refresh:
-
-```bash
-${QMD_CLI:-qmd} update
-```
-
-If the output says new hashes need vectors, or if restore replaced live pages and embeddings may be stale, run:
-
-```bash
-${QMD_CLI:-qmd} embed
-```
-
-Verify the wiki collection reflects the operation:
-
-```bash
-${QMD_CLI:-qmd} ls "$QMD_WIKI_COLLECTION"
-```
-
-For restore, also verify one restored page if the archive has a known page path:
+Follow the shared procedure in `.skills/_shared/qmd-refresh.md`. For restore, also verify one restored page if the archive has a known page path:
 
 ```bash
 ${QMD_CLI:-qmd} get "qmd://$QMD_WIKI_COLLECTION/<restored-page>.md" -l 5
 ```
 
-Record QMD refresh in the final report as one of:
-- `QMD refreshed: update + embed + verified`
-- `QMD refreshed: update only + verified`
-- `QMD skipped: QMD_WIKI_COLLECTION unset`
-- `QMD skipped: archive-only live content unchanged`
-- `QMD skipped: qmd CLI unavailable`
-- `QMD failed: <short error summary>`
+Record QMD refresh in the final report as one of the statuses defined in the shared procedure, plus `QMD skipped: archive-only live content unchanged` when Archive-only mode elects not to refresh.
 
 ## Safety Rules
 

@@ -125,29 +125,12 @@ Derive a clear, descriptive title from the content. Slugify it:
 
 ## Step 5: Write the Wiki Note
 
-Create the file at the target path with required frontmatter:
+Create the file at the target path using the canonical Page Template frontmatter from `llm-wiki/SKILL.md` (Page Template section), with these capture-specific values:
 
-```yaml
----
-title: >-
-  <Title>
-category: <synthesis|concepts|references|journal|skills>
-tags: [<2-5 domain tags from taxonomy>]
-sources:
-  - conversation:<ISO-date>
-created: <ISO-8601 timestamp>
-updated: <ISO-8601 timestamp>
-summary: >-
-  <1-2 sentences, ≤200 chars, answering "what knowledge does this page hold?">
-provenance:
-  extracted: 0.X
-  inferred: 0.X
-  ambiguous: 0.X
-base_confidence: 0.42
-lifecycle: draft
-lifecycle_changed: <ISO date today>
----
-```
+- `title` / `summary`: use `>-` folded scalars; summary answers "what knowledge does this page hold?" (≤200 chars)
+- `category`: `<synthesis|concepts|references|journal|skills>` per Step 2
+- `sources`: `conversation:<ISO-date>`
+- `base_confidence: 0.42`, `lifecycle: draft`, `lifecycle_changed: <ISO date today>`
 
 Body structure by type:
 
@@ -264,35 +247,4 @@ Type: synthesis
 
 ## QMD Refresh After Vault Writes
 
-QMD is a search index, not the source of truth. If `$QMD_WIKI_COLLECTION` is empty or unset, skip this step. Run it only after this skill has written or rewritten vault markdown. If QMD refresh fails, do not roll back the vault changes; report the QMD status separately.
-
-Use `$QMD_CLI` if set; otherwise use `qmd`.
-
-```bash
-${QMD_CLI:-qmd} update
-```
-
-If the output says vectors are needed or embeddings may be stale, run:
-
-```bash
-${QMD_CLI:-qmd} embed
-```
-
-Verify the collection with either:
-
-```bash
-${QMD_CLI:-qmd} ls "$QMD_WIKI_COLLECTION"
-```
-
-or, when a specific page path is known:
-
-```bash
-${QMD_CLI:-qmd} get "qmd://$QMD_WIKI_COLLECTION/<page>.md" -l 5
-```
-
-Record one of:
-- `QMD refreshed: update + embed + verified`
-- `QMD refreshed: update only + verified`
-- `QMD skipped: QMD_WIKI_COLLECTION unset`
-- `QMD skipped: qmd CLI unavailable`
-- `QMD failed: <short error summary>`
+If `$QMD_WIKI_COLLECTION` is set, follow the shared procedure in `.skills/_shared/qmd-refresh.md` after writing vault markdown and record the QMD status line it defines. If unset, record `QMD skipped: QMD_WIKI_COLLECTION unset`.

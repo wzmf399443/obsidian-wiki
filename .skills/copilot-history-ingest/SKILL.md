@@ -19,24 +19,13 @@ This skill can be invoked directly or via the `wiki-history-ingest` router (`/wi
 
 ## Before You Start
 
-1. **Resolve config** — follow the Config Resolution Protocol in `llm-wiki/SKILL.md` (inline `@name` override → walk up CWD for `.env` → `~/.obsidian-wiki/config` → prompt setup). This gives `OBSIDIAN_VAULT_PATH`, `COPILOT_HISTORY_PATH` (defaults to `~/.copilot/session-state`), and `COPILOT_VSCODE_STORAGE_PATH` (VS Code `workspaceStorage`; platform-specific — ask the user if absent)
-2. Read `.manifest.json` at the vault root to check what's already been ingested
-3. Read `index.md` at the vault root to know what the wiki already contains
+Follow the shared **Before You Start (config)** steps in `.skills/_shared/history-ingest-common.md`. This skill uses two history-path variables: `COPILOT_HISTORY_PATH` (defaults to `~/.copilot/session-state`) and `COPILOT_VSCODE_STORAGE_PATH` (VS Code `workspaceStorage`; platform-specific — ask the user if absent).
+
+**Shared pipeline** (modes, clustering, distillation routing, writing rules, manifest/bookkeeping, privacy): read `.skills/_shared/history-ingest-common.md` before Step 1; this file only documents what is specific to Copilot.
 
 ## Ingest Modes
 
-### Append Mode (default)
-
-Check `.manifest.json` for each source file (events JSONL, transcript JSONL, checkpoint, session-store DB). Only process:
-
-- Sessions not in the manifest (new sessions)
-- Sessions whose `updated_at` is newer than their `ingested_at` in the manifest
-
-This is usually what you want — the user ran a few new sessions and wants to capture the delta.
-
-### Full Mode
-
-Process everything regardless of manifest. Use after a `wiki-rebuild` or if the user explicitly asks.
+Append/Full mode semantics are shared — see `.skills/_shared/history-ingest-common.md` (Ingest Modes). Copilot keys the append-mode delta on each session's `updated_at` (from `workspace.yaml` / `session-store.db` `sessions.updated_at`) rather than file mtime.
 
 ## GitHub Copilot Data Layout
 
@@ -236,102 +225,54 @@ ORDER BY session_id, turn_index;
 
 ## Step 4: Cluster by Topic
 
-Don't create one wiki page per session. Instead:
-
-- Group extracted knowledge **by topic** across sessions
-- A single session about "debugging auth + setting up CI" → two separate topics
-- Three sessions across different days about "React performance" → one merged topic
-- `cwd` / `repository` give you a natural first-level grouping; `vscode.metadata.json`'s `customTitle` gives a human-readable session label
+General clustering guidance is shared — see `.skills/_shared/history-ingest-common.md` (Cluster by Topic). Copilot-specific: `cwd` / `repository` give a natural first-level grouping; `vscode.metadata.json`'s `customTitle` gives a human-readable session label.
 
 ## Step 5: Distill into Wiki Pages
 
-Each Copilot project maps to a project directory in the vault. Derive the project name from `cwd` or `repository`:
+Routing, project-page naming, writing rules, and the generic provenance markers are shared — see `.skills/_shared/history-ingest-common.md` (Distill into Wiki Pages). Copilot specifics:
 
-```
-C:\Users\name\git\my-project   → my-project
-/Users/name/code/another-app   → another-app
-```
-
-Prefer `repository` (e.g., `owner/repo`) from `session-store.db` over raw `cwd` when available.
-
-### Project-specific vs. global knowledge
-
-| What you found                      | Where it goes               | Example                                              |
-| ----------------------------------- | --------------------------- | ---------------------------------------------------- |
-| Project architecture decisions      | `projects/<name>/concepts/` | `projects/my-project/concepts/main-architecture.md`  |
-| Project-specific debugging patterns | `projects/<name>/skills/`   | `projects/my-project/skills/api-rate-limiting.md`    |
-| General concept the user learned    | `concepts/` (global)        | `concepts/react-server-components.md`                |
-| Recurring problem across projects   | `skills/` (global)          | `skills/debugging-hydration-errors.md`               |
-| A tool/service used                 | `entities/` (global)        | `entities/vercel-functions.md`                       |
-| Patterns across many sessions       | `synthesis/` (global)       | `synthesis/common-debugging-patterns.md`             |
-
-For each project with content, create or update the project overview page at `projects/<name>/<name>.md` — **named after the project, not `_project.md`**. Obsidian's graph view uses the filename as the node label, so `_project.md` makes every project show up as `_project` in the graph. Naming it `<name>.md` gives each project a distinct, readable node name.
-
-**Important:** Distill the _knowledge_, not the conversation. Don't write "In a session on March 15, the user asked about X." Write the knowledge itself, with the session as a source attribution.
-
-**Write a `summary:` frontmatter field** on every new/updated page — 1–2 sentences, ≤200 chars, answering "what is this page about?" for a reader who hasn't opened it. `wiki-query`'s cheap retrieval path reads this field to avoid opening page bodies.
-
-**Add confidence and lifecycle fields** to every new page's frontmatter:
-```yaml
-base_confidence: 0.42
-lifecycle: draft
-lifecycle_changed: <ISO date today>
-```
-Leave `lifecycle` unchanged on update.
-
-**Mark provenance** per the convention in `llm-wiki` (Provenance Markers section):
-
-- **Checkpoints and index.md** are pre-distilled by the system — treat checkpoint-derived claims as extracted (the system wrote them from observed actions).
-- **Memory artifacts** are user-authored — treat as extracted.
-- **Conversation turn distillation** is mostly inferred. You're synthesizing a coherent claim from many turns. Apply `^[inferred]` liberally to synthesized patterns, generalizations across sessions, and "what the user really meant" interpretations.
-- Use `^[ambiguous]` when the user changed direction mid-session or when the session ended unresolved.
-- Write a `provenance:` frontmatter block on every new/updated page summarizing the rough mix.
+- **Project name derivation** — derive from `cwd` or `repository`; prefer `repository` (e.g., `owner/repo`) from `session-store.db` over raw `cwd` when available:
+  ```
+  C:\Users\name\git\my-project   → my-project
+  /Users/name/code/another-app   → another-app
+  ```
+- **Provenance mapping (Copilot source types):**
+  - **Checkpoints and index.md** are pre-distilled by the system — treat checkpoint-derived claims as extracted (the system wrote them from observed actions).
+  - **Memory artifacts** are user-authored — treat as extracted.
+  - **Conversation turn distillation** is mostly inferred. Apply `^[inferred]` liberally to synthesized patterns, generalizations across sessions, and "what the user really meant" interpretations.
+  - Use `^[ambiguous]` when the user changed direction mid-session or when the session ended unresolved.
 
 ## Step 6: Update Manifest, Journal, and Special Files
 
-### Update `.manifest.json`
+Follow the shared **Update Manifest, Log, and Index** procedure (`.skills/_shared/history-ingest-common.md`). Copilot specifics:
 
-For each session processed, add/update its entry with:
-
-- `ingested_at`, `session_id`, `updated_at`
+- **Per-session entry fields** (Copilot tracks sessions, not files): `ingested_at`, `session_id`, `updated_at` — in place of the shared template's `size_bytes` / `modified_at`.
 - `source_type`: one of `"copilot_session"`, `"copilot_checkpoint"`, `"copilot_transcript"`, `"copilot_memory_artifact"`
-- `project`: the decoded project name
-- `pages_created` and `pages_updated` lists
-
-Also update the `projects` section of the manifest:
-
-```json
-{
-  "project-name": {
-    "repository": "owner/repo",
-    "cwd": "C:\\Users\\name\\git\\project-name",
-    "vault_path": "projects/project-name",
-    "last_ingested": "TIMESTAMP",
-    "sessions_ingested": 5,
-    "sessions_total": 8,
-    "checkpoints_ingested": 12,
-    "memory_artifacts_ingested": 3
+- `project`: the decoded project name; plus `pages_created` and `pages_updated` lists.
+- Top-level `projects` block:
+  ```json
+  {
+    "project-name": {
+      "repository": "owner/repo",
+      "cwd": "C:\\Users\\name\\git\\project-name",
+      "vault_path": "projects/project-name",
+      "last_ingested": "TIMESTAMP",
+      "sessions_ingested": 5,
+      "sessions_total": 8,
+      "checkpoints_ingested": 12,
+      "memory_artifacts_ingested": 3
+    }
   }
-}
-```
-
-### Create journal entry + update special files
-
-Update `index.md` and `log.md` per the standard process:
-
-```
-- [TIMESTAMP] COPILOT_HISTORY_INGEST projects=N sessions=M checkpoints=C pages_updated=X pages_created=Y mode=append|full
-```
-
-**`hot.md`** — Read `$OBSIDIAN_VAULT_PATH/hot.md` (create from the template in `wiki-ingest` if missing). Update **Recent Activity** with a one-line summary — e.g. "Ingested 5 Copilot sessions across 2 projects; surfaced patterns in API design and testing strategy." Keep the last 3 operations. Update **Active Threads** if any ongoing project is now better understood. Update `updated` timestamp.
+  ```
+- Log line for `log.md`:
+  ```
+  - [TIMESTAMP] COPILOT_HISTORY_INGEST projects=N sessions=M checkpoints=C pages_updated=X pages_created=Y mode=append|full
+  ```
+- hot.md sample sentence: "Ingested 5 Copilot sessions across 2 projects; surfaced patterns in API design and testing strategy."
 
 ## Privacy
 
-- Distill and synthesize — don't copy raw conversation text verbatim
-- Skip anything that looks like secrets, API keys, passwords, tokens
-- `data.reasoningOpaque` / `data.reasoningText` in assistant events is internal reasoning — skip entirely, never copy to wiki
-- If you encounter personal/sensitive content, ask the user before including it
-- The user's conversations may reference other people — be thoughtful about what goes in the wiki
+See shared **Privacy** in `.skills/_shared/history-ingest-common.md`. Copilot-specific: `data.reasoningOpaque` / `data.reasoningText` in assistant events is internal reasoning — skip entirely, never copy to wiki.
 
 ## Reference
 
@@ -339,35 +280,4 @@ See `references/copilot-data-format.md` for detailed data structure documentatio
 
 ## QMD Refresh After Vault Writes
 
-QMD is a search index, not the source of truth. If `$QMD_WIKI_COLLECTION` is empty or unset, skip this step. Run it only after this skill has written or rewritten vault markdown. If QMD refresh fails, do not roll back the vault changes; report the QMD status separately.
-
-Use `$QMD_CLI` if set; otherwise use `qmd`.
-
-```bash
-${QMD_CLI:-qmd} update
-```
-
-If the output says vectors are needed or embeddings may be stale, run:
-
-```bash
-${QMD_CLI:-qmd} embed
-```
-
-Verify the collection with either:
-
-```bash
-${QMD_CLI:-qmd} ls "$QMD_WIKI_COLLECTION"
-```
-
-or, when a specific page path is known:
-
-```bash
-${QMD_CLI:-qmd} get "qmd://$QMD_WIKI_COLLECTION/<page>.md" -l 5
-```
-
-Record one of:
-- `QMD refreshed: update + embed + verified`
-- `QMD refreshed: update only + verified`
-- `QMD skipped: QMD_WIKI_COLLECTION unset`
-- `QMD skipped: qmd CLI unavailable`
-- `QMD failed: <short error summary>`
+If `$QMD_WIKI_COLLECTION` is set, follow the shared procedure in `.skills/_shared/qmd-refresh.md` after writing vault markdown and record the QMD status line it defines. If unset, record `QMD skipped: QMD_WIKI_COLLECTION unset`.

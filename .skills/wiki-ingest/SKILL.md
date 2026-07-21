@@ -472,41 +472,7 @@ updated: TIMESTAMP
 
 ### Step 8: Refresh QMD Wiki Index (optional — requires `QMD_WIKI_COLLECTION`)
 
-**GUARD: If `$QMD_WIKI_COLLECTION` is empty or unset, skip this step.** The markdown vault is still the source of truth; QMD is a search index.
-
-Run this step only after pages and special files have been written. If the source was skipped because manifest hash matched, do not refresh QMD.
-
-This refresh currently requires the local QMD CLI. Use `$QMD_CLI` if set; otherwise use `qmd`. If the CLI is unavailable or returns an error, do not roll back the wiki ingest; report that the wiki was updated but QMD refresh was skipped or failed.
-
-For CLI refresh:
-
-```bash
-${QMD_CLI:-qmd} update
-```
-
-If the output says new hashes need vectors, or if pages were created/updated and embeddings may be stale, run:
-
-```bash
-${QMD_CLI:-qmd} embed
-```
-
-Verify at least one created or materially updated page is visible in the wiki collection:
-
-```bash
-${QMD_CLI:-qmd} get "qmd://$QMD_WIKI_COLLECTION/projects/<project>/<category>/<page>.md" -l 5
-```
-
-If the exact `qmd://` path is uncertain, use:
-
-```bash
-${QMD_CLI:-qmd} ls "$QMD_WIKI_COLLECTION" | rg "<page-slug>"
-```
-
-Record QMD refresh in the final report as one of:
-- `QMD refreshed: update + embed + verified`
-- `QMD skipped: QMD_WIKI_COLLECTION unset`
-- `QMD skipped: qmd CLI unavailable`
-- `QMD failed: <short error summary>`
+If `$QMD_WIKI_COLLECTION` is set, follow the shared procedure in `.skills/_shared/qmd-refresh.md` after writing vault markdown and record the QMD status line it defines. If unset, record `QMD skipped: QMD_WIKI_COLLECTION unset`. Run this step only after pages and special files have been written; if the source was skipped because the manifest hash matched, do not refresh QMD.
 
 ## Handling Multiple Sources
 
@@ -524,8 +490,7 @@ After ingesting, verify:
 - [ ] Inferred and ambiguous claims are marked with `^[inferred]` / `^[ambiguous]`; `provenance:` frontmatter block is present on new and updated pages
 - [ ] Every new/updated page has a `summary:` frontmatter field (1–2 sentences, ≤200 chars)
 - [ ] `relationships:` block is present on pages where source text made typed connections clear; all entries use an allowed type from `llm-wiki/SKILL.md`
-- [ ] If `QMD_WIKI_COLLECTION` is set and the QMD CLI is available, `qmd update` has run after writing pages
-- [ ] If QMD reports missing vectors or embeddings may be stale, `qmd embed` has run
+- [ ] If `QMD_WIKI_COLLECTION` is set, the shared QMD refresh procedure (`.skills/_shared/qmd-refresh.md`) has run after writing pages
 - [ ] QMD refresh status is included in the final report
 
 ## Reference

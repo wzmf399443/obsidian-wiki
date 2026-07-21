@@ -38,20 +38,7 @@ Infer the mode from the user's phrasing. If ambiguous, default to **by-tag**.
 
 ### Palette (10 distinct, colorblind-friendly colors)
 
-Use in order. If more groups than colors, cycle and add a lightness shift by dividing brightness ~20% via a second pass — or just cap at 10 and tell the user the remaining tags share the "other" color.
-
-| # | Hex | rgb (packed int) | Role |
-|---|---|---|---|
-| 0 | `#4E79A7` | `5142951` | blue |
-| 1 | `#F28E2B` | `15896107` | orange |
-| 2 | `#E15759` | `14767961` | red |
-| 3 | `#76B7B2` | `7780786` | teal |
-| 4 | `#59A14F` | `5873999` | green |
-| 5 | `#EDC948` | `15583048` | yellow |
-| 6 | `#B07AA1` | `11565217` | purple |
-| 7 | `#FF9DA7` | `16751527` | pink |
-| 8 | `#9C755F` | `10253663` | brown |
-| 9 | `#BAB0AC` | `12234924` | gray |
+Use the shared 10-color table in `.skills/_shared/palette.md` (rgb packed-int column), in order. If more groups than colors, cycle and add a lightness shift by dividing brightness ~20% via a second pass — or just cap at 10 and tell the user the remaining tags share the "other" color.
 
 Every color is wrapped as `{"a": 1, "rgb": <int>}`.
 
@@ -177,4 +164,4 @@ Append to `$VAULT_PATH/log.md`:
 - This is a pure config edit — no page content changes, no frontmatter writes.
 - Re-running is safe: each run creates a new backup, only `colorGroups` is rewritten.
 - If the user has manually curated color groups they want to keep, offer `combined` mode or ask before overwriting.
-- The palette here matches `wiki-export`'s `graph.html` community colors, so the Obsidian graph and the exported visualization look consistent.
+- The palette is shared with `wiki-export`'s `graph.html` community colors via `.skills/_shared/palette.md`, so the Obsidian graph and the exported visualization look consistent.

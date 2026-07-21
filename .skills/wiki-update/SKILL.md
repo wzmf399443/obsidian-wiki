@@ -101,31 +101,14 @@ Things that aren't project-specific go in the global categories:
 
 ### Page format
 
-Every page needs YAML frontmatter:
+Every page needs YAML frontmatter — use the canonical Page Template from `llm-wiki/SKILL.md` (Page Template section), with these project-sync specifics:
+
+- `sources: [projects/<project-name>]`
+- Use folded scalar syntax (`title: >-`, `summary: >-`) to keep frontmatter parser-safe across punctuation (`:`, `#`, quotes) without escaping rules; keep the contents indented by two spaces.
+
+Body example:
 
 ```markdown
----
-title: >-
-    Page Title
-category: concepts
-tags: [tag1, tag2]
-sources: [projects/<project-name>]
-summary: >-
-    One or two sentences (≤200 chars) describing what this page covers.
-provenance:
-  extracted: 0.6
-  inferred: 0.35
-  ambiguous: 0.05
-base_confidence: 0.59
-lifecycle: draft
-lifecycle_changed: TIMESTAMP_DATE
-created: TIMESTAMP
-updated: TIMESTAMP
----
-
-Use folded scalar syntax (summary: >-) for title and summary to keep frontmatter parser-safe across punctuation (:, #, quotes) without escaping rules.
-Keep the title and summary contents indented by two spaces under summary: >-.
-
 # Page Title
 
 - A fact the codebase or a doc actually states.
@@ -196,41 +179,7 @@ Write conceptually: "Synced obsidian-wiki — added wiki-capture and wiki-resear
 
 ## Step 7: Refresh QMD Wiki Index (optional — requires `QMD_WIKI_COLLECTION`)
 
-**GUARD: If `$QMD_WIKI_COLLECTION` is empty or unset, skip this step.** The markdown vault is the source of truth; QMD is only a search index.
-
-Run this step only after pages, `.manifest.json`, `index.md`, `log.md`, and `hot.md` have been written. If Step 2 found no meaningful changes and the sync stopped early, do not refresh QMD.
-
-This refresh currently requires the local QMD CLI. Use `$QMD_CLI` if set; otherwise use `qmd`. If the CLI is unavailable or returns an error, do not roll back the wiki update; report that the wiki was updated but QMD refresh was skipped or failed.
-
-For CLI refresh:
-
-```bash
-${QMD_CLI:-qmd} update
-```
-
-If the output says new hashes need vectors, or if pages were created/updated and embeddings may be stale, run:
-
-```bash
-${QMD_CLI:-qmd} embed
-```
-
-Verify at least one created or materially updated page is visible in the wiki collection:
-
-```bash
-${QMD_CLI:-qmd} get "qmd://$QMD_WIKI_COLLECTION/projects/<project-name>/<page>.md" -l 5
-```
-
-If the exact `qmd://` path is uncertain, use:
-
-```bash
-${QMD_CLI:-qmd} ls "$QMD_WIKI_COLLECTION" | rg "<project-name>"
-```
-
-Record QMD refresh in the final report as one of:
-- `QMD refreshed: update + embed + verified`
-- `QMD skipped: QMD_WIKI_COLLECTION unset`
-- `QMD skipped: qmd CLI unavailable`
-- `QMD failed: <short error summary>`
+If `$QMD_WIKI_COLLECTION` is set, follow the shared procedure in `.skills/_shared/qmd-refresh.md` after writing vault markdown and record the QMD status line it defines. If unset, record `QMD skipped: QMD_WIKI_COLLECTION unset`. Run this step only after pages, `.manifest.json`, `index.md`, `log.md`, and `hot.md` have been written; if Step 2 found no meaningful changes and the sync stopped early, do not refresh QMD.
 
 ## Tips
 
