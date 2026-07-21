@@ -30,7 +30,8 @@ search you already delegated — wait for the result.
 ## 2. Model tiers
 
 The Agent tool takes an optional `model` parameter. In this harness the accepted
-values are `haiku`, `sonnet`, `opus` — treat them as tier slots:
+values are `haiku`, `sonnet`, `opus` (a session running fable also accepts
+`fable`) — treat them as tier slots:
 
 | Tier | `model` param (the ONLY valid values) | GLM backend maps it to | Use for |
 |---|---|---|---|
@@ -48,7 +49,9 @@ values are `haiku`, `sonnet`, `opus` — treat them as tier slots:
 - The Agent tool has **no effort/reasoning parameter** — don't invent one. An
   `effort` option exists only inside Workflow scripts (`agent()` opts), and
   Workflow itself requires explicit user opt-in ("use a workflow") — default to
-  the plain Agent tool.
+  the plain Agent tool. When unsure of a tool's real params, verify against the
+  actual schema with `ToolSearch` — don't assume the Agent tool matches Workflow's
+  `agent()`.
 
 Agent types (the `subagent_type` parameter): `Explore` (read-only search —
 cheapest way to locate things), `Plan` (read-only architect), `general-purpose` /
@@ -67,6 +70,10 @@ cheapest way to locate things), `Plan` (read-only architect), `general-purpose` 
 A prompt missing any of the three gets you a confident agent doing the wrong
 thing. Copy from `.rules/templates.md` rather than writing from scratch.
 
+If AGENTS.md/CLAUDE.md was edited this session, tell subagents to READ the file
+from disk — the harness caches agent-context files, so the injected copy can be
+stale right after an edit (observed 2026-07-03).
+
 ## 4. Report contract (what comes back)
 
 - **Conclusions only**, ≤50 lines: findings, decisions needed, `file:line`
@@ -76,6 +83,9 @@ thing. Copy from `.rules/templates.md` rather than writing from scratch.
   scratchpad. Rule of thumb: anything >50 lines is a file, not a message.
 - Reports must **separate observed facts from inference** ("index.md lists 570
   pages; 5 files on disk are missing from it" vs "the index looks stale").
+- When the agent **edits existing pages**, the report must quote the original
+  sentence(s) it changed — vault pages are git-untracked (operations.md), so
+  the quote is the only rollback basis.
 - If the agent could not finish, the report says exactly what remains — a partial
   honest report beats a padded complete-looking one.
 

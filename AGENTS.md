@@ -18,6 +18,7 @@ If a referenced file is missing, ignore that reference and continue.
 | `.rules/templates.md` | When writing a subagent prompt (copy the matching template). |
 | `.rules/maintenance.md` | Before editing anything in `.rules/` or this file. |
 | `.rules/lessons.md` | At session start if working on wiki maintenance — recent mistakes live here. |
+| `.rules/operations.md` | Before an ingest run, before computing an ingest delta by hand, or before touching `.manifest.json` / the `obsidian-wiki` CLI — CLI-invocation and manifest gotchas live here. |
 | `.rules/diagnosis.md` | Only for background on why these rules exist. |
 | `.rules/letter.md` | If you can't state this vault's #1 safety warning (hint: mixed untagged company data), you haven't read it — read it now. Also before any export/publish. |
 

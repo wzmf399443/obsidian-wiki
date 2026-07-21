@@ -320,7 +320,11 @@ If the source is not project-specific, put everything in global categories.
 Before writing anything, plan which pages to update or create. Aim for 10-15 pages per ingest. For each:
 - Does this page already exist? (Check `index.md` and use Glob to search `OBSIDIAN_VAULT_PATH`)
 - If it exists, what new information does this source add?
-- If it's new, which category does it belong in?
+- If it's new, which category does it belong in? Before routing to `skills/`,
+  ask: is this a domain technique the *owner* can execute, or a gotcha about the
+  AI tooling/framework itself? Tooling/harness/CLI gotchas do **not** go in
+  `skills/` (see the `skills/` note in `llm-wiki/SKILL.md`) — they belong in the
+  tool's own repo, not the vault.
 - What `[[wikilinks]]` should connect it to existing pages?
 
 **Apply tier-aware filtering to existing pages** (see `llm-wiki/SKILL.md`, Importance Tiering section):
@@ -369,7 +373,7 @@ For each page in your plan:
 - Use the page template from the llm-wiki skill (frontmatter + sections). **For academic papers landing in `references/`, use the Paper Deep-Dive Template** from `llm-wiki/SKILL.md` instead of the generic one (see *Academic papers* in Step 1).
 - Place in the correct category directory
 - Add `[[wikilinks]]` to at least 2-3 existing pages
-- Include the source in the `sources` frontmatter field. In raw mode: derive from `capture_source` + `sources` frontmatter of the `_raw/` file — never use the `_raw/` path itself (see Raw Mode section)
+- Include the source in the `sources` frontmatter field. **Write local file paths in machine-independent `~` form** (e.g. `~/<workspace>/wiki-source/...`), never `/Users/<user>/...` absolute paths — do not copy the absolute-path convention from older pages or manifest entries (the vault syncs across machines with different home dirs). In raw mode: derive from `capture_source` + `sources` frontmatter of the `_raw/` file — never use the `_raw/` path itself (see Raw Mode section)
 
 **If updating an existing page:**
 - Read the current page first

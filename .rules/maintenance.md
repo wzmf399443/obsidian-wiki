@@ -50,6 +50,9 @@ remember it. One lesson per entry; no essays.
 - `lessons.md` > ~100 lines → distill: fold stable lessons into the target
   `.rules/` file they name (that counts as "adding an example" — allowed), delete
   entries that were one-off, keep the file under 50 lines after distilling.
+  Operational CLI / manifest / delta-detection lessons distill into
+  `operations.md`; delegation/model-tier lessons into `delegation.md`; the rest
+  into whatever their "Applies to" line names.
 - `AGENTS.md` > ~150 lines or any `.rules/` file > ~200 lines → propose a trim to
   the user; don't grow past that silently.
 - Duplicated guidance in two files → keep it in the more specific file, replace

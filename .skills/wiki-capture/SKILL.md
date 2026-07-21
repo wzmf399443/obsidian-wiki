@@ -93,6 +93,13 @@ Assign one of five types — this determines the target folder and tone:
 | `decision` | A strategic, architectural, or design choice and its rationale | `synthesis/` |
 | `session` | A complete discussion summary when the conversation spans multiple topics | `journal/` |
 
+A sixth target, `skills/`, applies when the content is a reusable how-to
+technique **the owner can execute** (a method, procedure, or capability). Route
+there only in that case — and never for gotchas about the AI tooling/framework
+itself (CLI, agent harness, this repo): those document the *tool*, not an owner
+skill, and belong in the tool's own repo, not the vault. See the `skills/` note
+in `llm-wiki/SKILL.md`.
+
 If the content clearly belongs to a specific project (detected from context or user mention), place it under `projects/<project-name>/<category>/` instead.
 
 ## Step 3: Rewrite as Declarative Knowledge

@@ -49,10 +49,19 @@ Organize pages into these default categories (customizable in `.env`):
 |---|---|---|
 | `concepts/` | Ideas, theories, mental models | `concepts/transformer-architecture.md` |
 | `entities/` | People, orgs, tools, projects | `entities/andrej-karpathy.md` |
-| `skills/` | How-to knowledge, procedures | `skills/fine-tuning-llms.md` |
+| `skills/` | How-to knowledge and procedures **the vault owner can execute** — a technique, method, or capability they possess | `skills/fine-tuning-llms.md` |
 | `references/` | Summaries of specific sources; academic papers use the Paper Deep-Dive Template (below) | `references/attention-is-all-you-need.md` |
 | `synthesis/` | Cross-cutting analysis across sources | `synthesis/scaling-laws-debate.md` |
 | `journal/` | Timestamped observations, session logs | `journal/2024-03-15.md` |
+
+> **`skills/` is not for tooling gotchas.** Notes about how to use — or what to
+> watch out for in — the wiki framework itself (the `obsidian-wiki` CLI, an AI
+> agent harness, this repo's structure) are **not** owner skills. They document
+> the *tool*, not a capability of the person, and belong in the tool's own repo
+> (`.rules/` — e.g. `operations.md`/`lessons.md`), never in a vault `skills/`
+> page. There are three distinct "skill" namespaces: `.skills/` (the AI tooling),
+> `_generated-skills/` (produced Agent-Skill bundles), and the vault `skills/`
+> category (the owner's how-to knowledge) — only the last is a wiki page.
 
 ### Projects
 
