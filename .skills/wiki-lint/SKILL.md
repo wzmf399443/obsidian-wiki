@@ -170,7 +170,7 @@ Find pages in `misc/` that have accumulated enough project affinity to be promot
 - Run the `cross-linker` skill first if affinity scores look stale (e.g., `affinity: {}` on a page with many wikilinks)
 - To promote: move the page to `projects/<project-name>/references/` (or another appropriate category), update its `category` frontmatter, remove `promotion_status`, and grep the vault for backlinks to update them
 
-### 12. Confidence and Lifecycle Schema
+### 11. Confidence and Lifecycle Schema
 
 Enforces the confidence + lifecycle frontmatter schema (see `llm-wiki/SKILL.md`, Confidence and Lifecycle section).
 
@@ -296,7 +296,7 @@ Append to the `LINT` log entry:
 - [TIMESTAMP] LINT ... lifecycle_issues=N
 ```
 
-### 13. Typed Relationships Validity
+### 12. Typed Relationships Validity
 
 Validate `relationships:` frontmatter blocks. Skip pages that have no `relationships:` block — the field is optional.
 
@@ -329,7 +329,7 @@ Append to the `LINT` log entry:
 ... relationship_issues=N
 ```
 
-### 11. Synthesis Gaps
+### 13. Synthesis Gaps
 
 Identify high-value synthesis opportunities the wiki is missing — concept pairs that co-occur across many pages but have no `synthesis/` page connecting them.
 

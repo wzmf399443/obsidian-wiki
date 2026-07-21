@@ -122,9 +122,6 @@ Choose the QMD transport from `$QMD_TRANSPORT`:
 - `mcp` (default): use the QMD MCP tool configured in the agent.
 - `cli`: run the local qmd CLI. Use `$QMD_CLI` if set; otherwise use `qmd`.
 
-For detailed CLI command selection, maintenance, and VM caveats, use the local
-`$qmd-cli` skill when it is installed.
-
 If the selected transport is unavailable (no MCP tool, `qmd` not on PATH, or the command errors), skip QMD and continue with Step 3.
 
 For MCP transport:

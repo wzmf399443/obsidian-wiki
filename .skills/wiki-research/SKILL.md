@@ -117,7 +117,9 @@ For each significant entity encountered (tools, libraries, companies, key author
 
 Standard entity frontmatter. Link back to concepts that use the entity and sources where it appears.
 
-### 4. synthesis/Research: [Topic].md — Master synthesis
+### 4. synthesis/research-[topic-slug].md — Master synthesis
+
+Filename is the lowercase-hyphenated topic slug (e.g. `synthesis/research-rust-async-runtimes.md`) — colons and spaces are not portable across filesystems.
 
 The primary output: a structured synthesis of everything found.
 
@@ -198,7 +200,7 @@ Check `index.md` for existing pages on the same topics — merge into existing p
 ## Quality Checklist
 
 - [ ] 3 rounds completed (or halted at sufficient depth)
-- [ ] Synthesis page exists at `synthesis/Research: [Topic].md`
+- [ ] Synthesis page exists at `synthesis/research-[topic-slug].md`
 - [ ] Source pages written for major references
 - [ ] Concept and entity pages written for significant items
 - [ ] Contradictions flagged in synthesis page

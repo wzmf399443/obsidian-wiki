@@ -43,6 +43,7 @@ If the user requests a filtered export — phrases like **"public export"**, **"
 - Skip any page whose frontmatter tags contain a blocked tag when building the node list
 - Skip any edge where either endpoint was excluded
 - Note the filter in the summary: `(filtered: visibility/internal, visibility/pii excluded)`
+- Set `graph.graph.filter = "visibility:public-only"` in the JSON output. If a project filter is also active, combine both values in one string: `"project:<name>+visibility:public-only"`.
 
 Pages with no `visibility/` tag, or tagged `visibility/public`, are always included.
 

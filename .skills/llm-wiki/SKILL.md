@@ -565,7 +565,7 @@ find_config() {
 Skills that write runtime state (e.g. `daily-update`) must scope that state to the resolved vault, not to a global path. Use:
 
 ```
-VAULT_ID=$(echo "$OBSIDIAN_VAULT_PATH" | md5sum 2>/dev/null || md5 -q - <<< "$OBSIDIAN_VAULT_PATH" | cut -c1-8)
+VAULT_ID=$(echo "$OBSIDIAN_VAULT_PATH" | { md5sum 2>/dev/null || md5 -q -; } | cut -c1-8)
 STATE_DIR="$HOME/.obsidian-wiki/state/$VAULT_ID"
 ```
 

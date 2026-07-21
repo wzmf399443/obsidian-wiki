@@ -90,6 +90,8 @@ This keeps faith with the "immutable raw layer" principle in `llm-wiki/SKILL.md`
 - If the file has only `sources:`, copy those entries verbatim.
 - Only fall back to the `_raw/` filename if the file has no `sources:` or `capture_source` fields at all.
 
+**Link-field conversion:** `_raw/` frontmatter uses flat `related` / `extends` / `contradicts` / `superseded_by` fields. Convert them to the nested `relationships:` block on the promoted page per the mapping table in `wiki-capture/references/RAW-FORMAT.md` (Promotion section); never copy the flat fields through.
+
 **Move safety:** Only move the specific file that was just promoted. Before moving, verify the resolved path is inside `$OBSIDIAN_VAULT_PATH/_raw/` — never touch files outside this directory. Never use wildcards or recursive operations (`rm -rf`, `mv *`). Move one file at a time by its exact path into `_raw/_archived/`, preserving its filename. If a file of the same name already exists there, append a numeric suffix rather than overwriting.
 
 ## The Ingest Process

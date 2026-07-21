@@ -17,7 +17,7 @@ You run a lightweight maintenance pass over the wiki: check source freshness, re
 1. **Resolve config** — follow the Config Resolution Protocol in `llm-wiki/SKILL.md` (inline `@name` override → walk up CWD for `.env` → `~/.obsidian-wiki/config` → prompt setup). This gives `OBSIDIAN_VAULT_PATH` and `OBSIDIAN_WIKI_REPO`.
 2. **Derive vault-scoped state dir** — all runtime state is scoped to the resolved vault, not global:
    ```bash
-   VAULT_ID=$(echo "$OBSIDIAN_VAULT_PATH" | md5sum 2>/dev/null | cut -c1-8 || md5 -q - <<< "$OBSIDIAN_VAULT_PATH" | cut -c1-8)
+   VAULT_ID=$(echo "$OBSIDIAN_VAULT_PATH" | { md5sum 2>/dev/null || md5 -q -; } | cut -c1-8)
    STATE_DIR="$HOME/.obsidian-wiki/state/$VAULT_ID"
    mkdir -p "$STATE_DIR"
    ```

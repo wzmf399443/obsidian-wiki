@@ -93,6 +93,25 @@ Use the table below to set `base_confidence` and the `provenance` split:
 
 ---
 
+## Promotion: Mapping Flat Link Fields to `relationships:`
+
+The flat `related` / `extends` / `contradicts` / `superseded_by` fields above are a
+quick-capture convenience. Promoted wiki pages use the nested `relationships:` block
+defined in `llm-wiki/SKILL.md` (Typed Relationships section). When `/wiki-ingest`
+promotes a `_raw/` file, convert as follows and drop the flat fields from the
+promoted page's frontmatter:
+
+| Raw field | Promoted `relationships:` entry |
+|---|---|
+| `related: [X, Y]` | One entry per item: `target: "[[X]]"`, `type: related_to` |
+| `extends: X` | `target: "[[X]]"`, `type: extends` |
+| `contradicts: X` | `target: "[[X]]"`, `type: contradicts` |
+| `superseded_by: X` | No inverse type exists — add `target: "[[this page]]"`, `type: replaces` on page X if you are touching it in the same run; otherwise use `type: related_to` here and state the supersession in the body |
+
+If every flat field is empty/null, omit the `relationships:` block entirely.
+
+---
+
 ## Multiple Findings in One File
 
 When several related findings belong to the same topic cluster, place them sequentially
