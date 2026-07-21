@@ -66,6 +66,8 @@ install_skills() {
 
   mkdir -p "$target_dir"
   for skill in "$SKILLS_DIR"/*/; do
+    # Non-skill dirs like _shared/ carry no SKILL.md — don't install them.
+    [ -f "$skill/SKILL.md" ] || continue
     local skill_name link_path link_target
     skill_name="$(basename "$skill")"
     if [ ${#subset[@]} -gt 0 ]; then
@@ -296,7 +298,7 @@ SYNC_SCRIPT
 fi
 
 # ── Step 5: Summary ──────────────────────────────────────────
-SKILL_COUNT=$(echo "$SKILLS_DIR"/*/  | tr ' ' '\n' | grep -c /)
+SKILL_COUNT=$(echo "$SKILLS_DIR"/*/SKILL.md | tr ' ' '\n' | grep -c /)
 
 echo ""
 echo "───────────────────────────────────────────────────"
