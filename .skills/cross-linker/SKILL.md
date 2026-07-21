@@ -26,7 +26,7 @@ When inserting links in Step 4, apply the link format from `llm-wiki/SKILL.md` (
 
 ## Step 1: Build the Page Registry
 
-Glob all `.md` files in the vault (excluding `_archives/`, `.obsidian/`). For each page, extract:
+Glob all `.md` files in the vault (excluding `_archives/`, `_readouts/`, `.obsidian/`). For each page, extract:
 
 - **Filename** (without `.md`) — this is the wikilink target
 - **Title** from frontmatter
@@ -96,6 +96,41 @@ Tag each candidate with a confidence label based on its score:
 Only act on **EXTRACTED** and **INFERRED** candidates. Include the confidence label in the Cross-Link Report so the user can review INFERRED links before trusting them.
 
 ## Step 4: Apply Links
+
+**Pre-write snapshot** — before the first file write, check whether the vault itself is the root of a Git repository. Merely being a subdirectory of a larger repository does not qualify: running `git add -A` there could capture unrelated files. If the vault is not a standalone Git repository, skip this step silently — no nagging, no suggesting `git init`.
+
+```bash
+VAULT_REAL_PATH=$(cd "$OBSIDIAN_VAULT_PATH" && pwd -P)
+VAULT_GIT_ROOT=$(git -C "$OBSIDIAN_VAULT_PATH" rev-parse --show-toplevel 2>/dev/null || true)
+SNAPSHOT_SHA=""
+
+if [ -n "$VAULT_GIT_ROOT" ] && [ "$VAULT_GIT_ROOT" = "$VAULT_REAL_PATH" ]; then
+  if git -C "$OBSIDIAN_VAULT_PATH" diff --quiet \
+    && git -C "$OBSIDIAN_VAULT_PATH" diff --cached --quiet \
+    && [ -z "$(git -C "$OBSIDIAN_VAULT_PATH" ls-files --others --exclude-standard)" ]; then
+    SNAPSHOT_SHA=$(git -C "$OBSIDIAN_VAULT_PATH" rev-parse HEAD)
+  else
+    if ! git -C "$OBSIDIAN_VAULT_PATH" add -A; then
+      echo "Pre-write snapshot failed; abort the skill without writing any vault files." >&2
+      exit 1
+    fi
+    if ! git -C "$OBSIDIAN_VAULT_PATH" commit -m "pre-cross-linker snapshot" --quiet; then
+      echo "Pre-write snapshot failed; abort the skill without writing any vault files." >&2
+      exit 1
+    fi
+    SNAPSHOT_SHA=$(git -C "$OBSIDIAN_VAULT_PATH" rev-parse HEAD)
+  fi
+fi
+```
+
+The clean-repository branch deliberately avoids calling `git commit`, so "nothing to commit" is not treated as an error. If `git add` or `git commit` fails, stop before editing the vault; never continue without the promised snapshot.
+
+If `SNAPSHOT_SHA` is non-empty and the skill writes files, include the SHA in the final report. To discard the entire run, after confirming there are no later changes worth keeping, the user can run:
+
+```bash
+git -C "$OBSIDIAN_VAULT_PATH" reset --hard "$SNAPSHOT_SHA"
+git -C "$OBSIDIAN_VAULT_PATH" clean -fd
+```
 
 For each page with missing links:
 
@@ -215,6 +250,7 @@ To promote: move the page to `projects/<project-name>/references/` and update al
 ### Pages Skipped: 3
 - `index.md`, `log.md` — special files
 - `_archives/*` — archived content
+- `_readouts/*` — derived readouts (wiki-narrate output)
 ```
 
 ## Step 7: Update Log and Hot Cache
@@ -230,7 +266,7 @@ Append to `log.md`:
 
 - **Run after every ingest.** New pages are almost always poorly connected. This is the fix.
 - **Be conservative with inline links.** Only link the first natural mention, not every occurrence.
-- **Don't touch pages in `_archives/`.** Those are frozen snapshots.
+- **Don't touch pages in `_archives/` or `_readouts/`.** Archives are frozen snapshots; readouts are derived output from `wiki-narrate`, not knowledge pages.
 - **Respect existing structure.** If a page carefully curates its links in a `## Key Concepts` section, add to that section rather than creating a separate `## Related`.
 - **Entity pages are link magnets.** An entity like `jane-doe` should be linked from almost every project page. Prioritize these.
 

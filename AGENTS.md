@@ -6,6 +6,10 @@ No scripts or dependencies — everything is markdown instructions you execute d
 > **Single source:** `CLAUDE.md` and `GEMINI.md` are symlinks to this file
 > (`AGENTS.md`). Edit `AGENTS.md` only — never replace the symlinks with copies.
 
+## README Translation Parity
+
+`README.md` and `README_TW.md` are one documentation surface. Keep headings, examples, links, and user-facing behavior aligned between the two translations. The check is advisory and never blocks a PR: the `readme-translation-drift` CI job only reports drift. Run `python tools/check_readme_sync.py` to list commits that changed `README.md` without a later `README_TW.md` update, along with the pending English diff — then translate and backfill those changes into `README_TW.md`. Reviewers assess translation quality.
+
 ## Session Protocol — read before doing work
 
 Operating rules live in `.rules/`. Don't read them all upfront — load on trigger.
@@ -68,15 +72,24 @@ it holds real conventions, e.g. respond in Traditional Chinese).
 
 ```
 $OBSIDIAN_VAULT_PATH/
-├── index.md          # Master index — every page listed, always current
-├── log.md            # Chronological activity log
-├── hot.md            # ~500-word snapshot of recent activity — read at session start
-├── .manifest.json    # Every ingested source: path, timestamps, pages produced
-├── _meta/            # taxonomy.md (tag vocabulary) + *.base dashboards
-├── _insights.md      # Graph analysis output
-├── _raw/             # Staging — rough notes promoted on next ingest
-├── concepts/ entities/ skills/ references/ synthesis/ journal/
-└── projects/<name>.md  # One page per project synced via wiki-update
+├── index.md                # Master index — every page listed, always kept current
+├── log.md                  # Chronological activity log (ingests, updates, lints)
+├── hot.md                  # Session hot cache — ~500-word semantic snapshot of recent activity
+├── .manifest.json          # Tracks every ingested source: path, timestamps, pages produced
+├── _meta/
+│   ├── taxonomy.md         # Controlled tag vocabulary
+│   └── *.base              # Obsidian Bases dashboard definitions (wiki-dashboard skill)
+├── _insights.md            # Graph analysis output (hubs, bridges, dead ends)
+├── _raw/                   # Staging area — drop rough notes here, next ingest promotes them
+├── _readouts/              # Derived narrative readouts saved by wiki-narrate — not knowledge pages
+├── concepts/               # Abstract ideas, patterns, mental models
+├── entities/               # Concrete things — people, tools, libraries, companies
+├── skills/                 # How-to knowledge, techniques, procedures
+├── references/             # Factual lookups — specs, APIs, configs
+├── synthesis/              # Cross-cutting analysis connecting multiple concepts
+├── journal/                # Time-bound entries — daily logs, session notes
+└── projects/
+    └── <project-name>.md   # One page per project synced via wiki-update
 ```
 
 Required frontmatter on every page: `title`, `category`, `tags`, `sources`,
@@ -101,6 +114,7 @@ Skills live in `.skills/<name>/SKILL.md`. Match intent to skill:
 | "what's the status" / "what's been ingested" / "show the delta" | `wiki-status` |
 | "wiki insights" / "hubs" / "wiki structure" | `wiki-status` (insights mode) |
 | "what do I know about X" / "find info on Y" / any question | `wiki-query` |
+| "narrate" / "briefing" / "explain this topic" / "/wiki-narrate" | `wiki-narrate` |
 | "audit" / "lint" / "find broken links" / "wiki health" | `wiki-lint` |
 | "dedup my wiki" / "find duplicate pages" / "merge duplicates" / "identity resolution" / "consolidate my wiki" | `wiki-dedup` |
 | "rebuild" / "start over" / "archive" / "restore" | `wiki-rebuild` |
@@ -123,8 +137,9 @@ Skills live in `.skills/<name>/SKILL.md`. Match intent to skill:
 | "/impl-validator" / "check this implementation" / "validate what you did" / "is this correct?" | `impl-validator` |
 | "/wiki-switch NAME" / "switch to my work wiki" / "switch vault" / "change wiki" / "list my wikis" / "show my vaults" / "create a new vault config" | `wiki-switch` |
 | "/wiki-digest" / "what did I learn this week" / "weekly digest" / "knowledge summary" / "what's new in my wiki" / "summarize my recent learning" / "monthly review" | `wiki-digest` |
-| "/wiki-stage-commit" / "review staged pages" / "commit staged writes" | `wiki-stage-commit` |
-| "/wiki-context-pack" / "context slice for X" | `wiki-context-pack` |
+| "/wiki-context-pack" / "make a context pack" / "context slice for X" / "pack the wiki for my agent" / "bounded context for Y" | `wiki-context-pack` |
+| "/wiki-stage-commit" / "review staged pages" / "commit staged writes" / "promote staged pages" / "what's waiting in staging" | `wiki-stage-commit` |
+| "restyle Obsidian" / "adjust the vault layout" / "CSS snippet" / "tune tabs/sidebars/graph panes" | `obsidian-layout-adjustment` |
 | wiki pattern theory / architecture questions | `llm-wiki` |
 
 ## Cross-Project Usage

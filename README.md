@@ -11,6 +11,8 @@
   <img width="768" height="512" alt="obisidan-wiki" src="https://github.com/user-attachments/assets/b44cf63b-3197-4fb1-8e18-dbc9a39f27a7" />
 </p>
 
+English | [繁體中文](README_TW.md)
+
 A **digital brain** you grow with your AI agent. It remembers what you figure out, connects it to what you already know, and answers when you ask.
 
 The pattern comes from Andrej Karpathy's [LLM Wiki gist](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f): compile knowledge once into interconnected markdown files and keep them current, instead of asking an LLM the same questions over and over (or running RAG every time). Obsidian is how you see the brain. Your AI agent is how you grow it.
@@ -46,6 +48,8 @@ obsidian-wiki info              # show install paths, version, and config
 obsidian-wiki doctor            # health-check config, vault shape, and installed skills
 obsidian-wiki query "rate limiting"  # query the configured vault from the terminal
 obsidian-wiki lint              # lint the configured vault for broken links / metadata gaps
+obsidian-wiki trust-check --strict  # CI/scheduled gate for approved manual review fingerprints
+obsidian-wiki trust-record --all --reviewed-at <ISO-with-timezone> --approved  # record a human-approved full review
 obsidian-wiki setup --project . # also drop project-local skills + AGENTS.md into the current repo
 obsidian-wiki setup --copy      # copy skill files instead of symlinking
 ```
@@ -418,6 +422,7 @@ Everything lives in `.skills/`. Each skill is a markdown file the agent reads wh
 | `wiki-status`           | Show what's ingested, what's pending, the delta   | `/wiki-status`           |
 | `wiki-rebuild`          | Archive, rebuild from scratch, or restore         | `/wiki-rebuild`          |
 | `wiki-query`            | Answer questions from the wiki                    | `/wiki-query`            |
+| `wiki-narrate`          | Render a cited narrative from a wiki topic        | `/wiki-narrate <topic>`  |
 | `wiki-lint`             | Find broken links, orphans, contradictions        | `/wiki-lint`             |
 | `cross-linker`          | Auto-discover and insert missing wikilinks        | `/cross-linker`          |
 | `tag-taxonomy`          | Enforce consistent tag vocabulary across pages    | `/tag-taxonomy`          |
@@ -563,6 +568,10 @@ Both skills follow the same Karpathy pattern as everything else. If a concept pa
 ## Contributing
 
 This is early. The skills work, but there's room to make the brain smarter: better cross-referencing, sharper deduplication, bigger vaults, new ingest sources. If you've been chewing on this problem or have a workflow that could be a skill, PRs are welcome.
+
+### Keeping both READMEs in sync
+
+`README.md` is the English documentation and `README_TW.md` is its Traditional Chinese translation; together they are one documentation surface. Keep headings, examples, links, and user-facing behavior structurally and semantically aligned. Syncing is advisory, not a merge gate: the `readme-translation-drift` CI job only reports when the translation falls behind. To catch up, run `python tools/check_readme_sync.py` — it lists the commits that changed `README.md` without a later `README_TW.md` update plus the pending English diff — then translate and backfill those changes into `README_TW.md`. Reviewers assess translation quality.
 
 ### Adding a new skill
 
