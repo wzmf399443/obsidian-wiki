@@ -113,6 +113,7 @@ Check whether pages are being honest about how much of their content is inferred
 
 **How to check:**
 - For each page with a `provenance:` block or any `^[inferred]`/`^[ambiguous]` markers, count sentences/bullets and how many end with each marker
+- Both the plain form (`^[inferred]`) and the annotated colon form (`^[inferred: note]`, `^[ambiguous: note]`) are legal and count identically toward density (owner decision 2026-07-28). `^[extracted]` in ANY form (plain or colon) is a hard error — extracted is the unmarked default; flag every occurrence for stripping.
 - Compute rough fractions (`extracted`, `inferred`, `ambiguous`)
 - Apply these thresholds:
   - **AMBIGUOUS > 15%**: flag as "speculation-heavy" — even 1-in-7 claims being genuinely uncertain is a signal the page needs tighter sourcing or should be moved to `synthesis/`

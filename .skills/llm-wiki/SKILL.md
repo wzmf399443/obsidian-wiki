@@ -284,8 +284,8 @@ Every claim on a wiki page has one of three provenance states. Mark them inline 
 | State | Marker | Meaning |
 |---|---|---|
 | **Extracted** | *(no marker — default)* | A paraphrase of something a source actually says. |
-| **Inferred** | `^[inferred]` suffix | An LLM-synthesized claim — a connection, generalization, or implication the source doesn't state directly. |
-| **Ambiguous** | `^[ambiguous]` suffix | Sources disagree, or the source is unclear. |
+| **Inferred** | `^[inferred]` or `^[inferred: note]` suffix | An LLM-synthesized claim — a connection, generalization, or implication the source doesn't state directly. |
+| **Ambiguous** | `^[ambiguous]` or `^[ambiguous: note]` suffix | Sources disagree, or the source is unclear. |
 
 Example:
 
@@ -293,7 +293,10 @@ Example:
 - Transformers parallelize across positions, unlike RNNs.
 - This is why they scale better on modern hardware. ^[inferred]
 - GPT-4 was trained on roughly 13T tokens. ^[ambiguous]
+- Likely the same allocator issue as v2. ^[inferred: matches v2 stack trace shape]
 ```
+
+The annotated (colon) form is legal and counts toward marker density exactly like the plain form; the note explains *why* the claim is inferred/ambiguous (owner decision 2026-07-28). There is **no** `^[extracted]` marker in any form — extracted is the unmarked default, and writing one is a lint error.
 
 **Why this syntax:**
 - `^[...]` is footnote-adjacent in Obsidian — renders cleanly and never collides with `[[wikilinks]]`.

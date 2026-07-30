@@ -420,9 +420,9 @@ When **updating** an existing page, recompute `base_confidence` only if sources 
 `visibility/` tags are system tags and do **not** count toward the 5-tag limit. When in doubt, omit — untagged pages are treated as public. Never add a visibility tag just because a topic sounds technical.
 
 **Apply provenance markers** per the convention in `llm-wiki` (Provenance Markers section):
-- Inferred claims get a trailing `^[inferred]`
-- Ambiguous/contested claims get a trailing `^[ambiguous]`
-- Extracted claims need no marker
+- Inferred claims get a trailing `^[inferred]` (or `^[inferred: short note]` when the reason is worth recording — both forms are legal and count identically, owner decision 2026-07-28)
+- Ambiguous/contested claims get a trailing `^[ambiguous]` (or `^[ambiguous: short note]`)
+- Extracted claims need no marker — **never write a `^[extracted]` marker in any form (plain or colon)**; it is not part of the convention, and lint's marker-density recompute will miscount it (2026-07-23 cleanup removed 205 of them across 55 pages)
 - After writing the page, count rough fractions and write them to a `provenance:` frontmatter block (extracted/inferred/ambiguous summing to ~1.0). When updating an existing page, recompute and update the block.
 
 ### Step 6: Update Cross-References
