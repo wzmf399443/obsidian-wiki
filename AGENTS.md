@@ -114,6 +114,7 @@ Skills live in `.skills/<name>/SKILL.md`. Match intent to skill:
 | "what's the status" / "what's been ingested" / "show the delta" | `wiki-status` |
 | "wiki insights" / "hubs" / "wiki structure" | `wiki-status` (insights mode) |
 | "what do I know about X" / "find info on Y" / any question | `wiki-query` |
+| "use my vault as context" / "context pack for X" / "bounded context" | `wiki-context-pack` |
 | "narrate" / "briefing" / "explain this topic" / "/wiki-narrate" | `wiki-narrate` |
 | "audit" / "lint" / "find broken links" / "wiki health" | `wiki-lint` |
 | "dedup my wiki" / "find duplicate pages" / "merge duplicates" / "identity resolution" / "consolidate my wiki" | `wiki-dedup` |
@@ -147,7 +148,9 @@ Skills live in `.skills/<name>/SKILL.md`. Match intent to skill:
 From any directory: `wiki-update` distills the current project into
 `$VAULT/projects/<name>.md` (delta-only on repeat runs via `last_commit_synced`
 in `.manifest.json`); `wiki-query` answers from the wiki (index/frontmatter pass
-first, page bodies only if needed, `[[wikilink]]` citations in the answer).
+first, page bodies only if needed, `[[wikilink]]` citations in the answer);
+`wiki-context-pack` compiles a read-only, token-bounded, provenance-rich context
+slice from the vault for a downstream agent — it never writes back.
 
 ## Visibility Tags (optional)
 

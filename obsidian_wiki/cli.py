@@ -24,8 +24,8 @@ GLOBAL_CONFIG = GLOBAL_CONFIG_DIR / "config"
 
 # Skills usable from any project (no vault context needed beyond the global
 # config). These are also installed globally for agents that only scope skills
-# per-project, so cross-project sync/query work everywhere.
-PORTABLE_SKILLS = ("wiki-update", "wiki-query")
+# per-project, so cross-project sync/query/context work everywhere.
+PORTABLE_SKILLS = ("wiki-update", "wiki-query", "wiki-context-pack")
 
 
 # ── Data resolution ──────────────────────────────────────────────────────────
@@ -582,6 +582,48 @@ def _print_doctor(report: dict[str, object]) -> None:
 
 
 # ── Commands ─────────────────────────────────────────────────────────────────
+def _maybe_configure_sync(vault_path: Path, remote_arg: str | None) -> bool:
+    """Offer (or apply) GitHub sync setup for the vault.
+
+    Non-interactive (`--remote` passed, or no TTY and no remote given): only
+    acts when a remote was explicitly supplied. Interactive: prompts, mirroring
+    setup.sh's flow, so pip/uv installs get the same offer shell/curl installs
+    always had (see #153).
+    """
+    from obsidian_wiki.sync import configure_sync, get_remote
+
+    if get_remote(vault_path):
+        return True  # already configured — nothing to do
+
+    remote = remote_arg
+    if not remote:
+        if not sys.stdin.isatty():
+            return False
+        print()
+        try:
+            answer = input("  Set up GitHub sync for your vault? [y/N]: ").strip()
+        except EOFError:
+            answer = ""
+        if answer.lower() != "y":
+            return False
+        try:
+            remote = input("  GitHub repo URL (e.g. https://github.com/you/my-wiki.git): ").strip()
+        except EOFError:
+            remote = ""
+        if not remote:
+            return False
+
+    try:
+        messages = configure_sync(vault_path, remote)
+    except (FileNotFoundError, ValueError, RuntimeError) as exc:
+        print(f"⚠️  GitHub sync setup skipped: {exc}", file=sys.stderr)
+        return False
+    for m in messages:
+        print(f"✅  {m}")
+    print("✅  Run `obsidian-wiki sync` any time to commit and push vault changes.")
+    return True
+
+
 def cmd_setup(args: argparse.Namespace) -> int:
     mode = "copy" if args.copy else "symlink"
     print("\n╔══════════════════════════════════════════════════╗")
@@ -602,20 +644,58 @@ def cmd_setup(args: argparse.Namespace) -> int:
         project_dir = Path(args.project or os.getcwd()).expanduser().resolve()
         install_project(project_dir, mode)
 
+    sync_configured = False
+    if vault_path and Path(vault_path).expanduser().is_dir():
+        sync_configured = _maybe_configure_sync(Path(vault_path).expanduser(), args.remote)
+
     n = len(list_skills())
     print("\n───────────────────────────────────────────────────")
     print(" Setup complete!\n")
     print(f" Skills installed: {n}  (mode: {mode})")
     if vault_path:
         print(f" Vault:            {vault_path}")
+    if sync_configured:
+        print(" GitHub sync:      obsidian-wiki sync")
     print("\n Next steps:")
     print("   1. Open a project in your agent")
     print('   2. Say: "set up my wiki"\n')
     print(" From any project:")
     print("   /wiki-update    → sync knowledge into your vault")
     print("   /wiki-query     → ask questions against your wiki")
+    print("   /wiki-context-pack → compile bounded context for another agent")
     print("───────────────────────────────────────────────────\n")
     return 0
+
+
+def cmd_sync_setup(args: argparse.Namespace) -> int:
+    from obsidian_wiki.sync import configure_sync
+
+    vault_str = resolve_vault_path(args.vault)
+    if not vault_str:
+        print("error: no vault configured — pass --vault or run `obsidian-wiki setup` first", file=sys.stderr)
+        return 1
+    vault_path = Path(vault_str).expanduser()
+    try:
+        messages = configure_sync(vault_path, args.remote)
+    except (FileNotFoundError, ValueError, RuntimeError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    for m in messages:
+        print(f"✅  {m}")
+    print("✅  Run `obsidian-wiki sync` any time to commit and push vault changes.")
+    return 0
+
+
+def cmd_sync(args: argparse.Namespace) -> int:
+    from obsidian_wiki.sync import run_sync
+
+    vault_str = resolve_vault_path(args.vault)
+    if not vault_str:
+        print("error: no vault configured — pass --vault or run `obsidian-wiki setup` first", file=sys.stderr)
+        return 1
+    code, message = run_sync(Path(vault_str).expanduser())
+    print(message)
+    return code
 
 
 def cmd_graph_query(args: argparse.Namespace) -> int:
@@ -752,7 +832,12 @@ def cmd_lint(args: argparse.Namespace) -> int:
         print(f"error: vault not found: {vault}", file=sys.stderr)
         return 1
 
-    report = lint_vault(vault, require_trust_ledger=True)
+    strict_trust = args.strict_trust or _read_config_value("OBSIDIAN_TRUST_STRICT").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+    report = lint_vault(vault, require_trust_ledger=True, strict_trust=strict_trust)
     if args.json:
         if args.pretty:
             print(json.dumps(report, indent=2))
@@ -766,7 +851,11 @@ def cmd_lint(args: argparse.Namespace) -> int:
 
 
 def _resolve_command_vault(vault_arg: str | None) -> Path | None:
-    resolved = vault_arg or _read_config_value("OBSIDIAN_VAULT_PATH")
+    resolved = (
+        vault_arg
+        if vault_arg is not None
+        else _read_config_value("OBSIDIAN_VAULT_PATH")
+    )
     if not resolved:
         print("error: vault not configured; pass a path or run obsidian-wiki setup", file=sys.stderr)
         return None
@@ -775,6 +864,41 @@ def _resolve_command_vault(vault_arg: str | None) -> Path | None:
         print(f"error: vault not found: {vault}", file=sys.stderr)
         return None
     return vault
+
+
+def _read_env_value(path: Path, key: str) -> tuple[bool, str]:
+    if not path.is_file():
+        return False, ""
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if line.startswith(f"{key}="):
+            return True, line.split("=", 1)[1].strip().strip('"')
+    return False, ""
+
+
+def _resolve_context_pack_vault(vault_arg: str | None) -> Path | None:
+    if vault_arg is not None:
+        return _resolve_command_vault(vault_arg)
+
+    current = Path.cwd().resolve()
+    home = HOME.resolve()
+    while True:
+        found, local_vault = _read_env_value(
+            current / ".env",
+            "OBSIDIAN_VAULT_PATH",
+        )
+        if found:
+            if not local_vault:
+                print(
+                    "error: vault not configured; pass a path or run obsidian-wiki setup",
+                    file=sys.stderr,
+                )
+                return None
+            return _resolve_command_vault(local_vault)
+        if current == home or current.parent == current:
+            break
+        current = current.parent
+    return _resolve_command_vault(None)
 
 
 def cmd_trust_record(args: argparse.Namespace) -> int:
@@ -879,6 +1003,31 @@ def cmd_query(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_context_pack(args: argparse.Namespace) -> int:
+    from obsidian_wiki.context_pack import ContextError, build_context_pack, render_markdown
+
+    vault = _resolve_context_pack_vault(args.vault)
+    if vault is None:
+        return 1
+    try:
+        pack = build_context_pack(
+            vault,
+            args.topic or "",
+            budget=args.budget,
+            recent=args.recent,
+            public_only=args.public_only,
+            metadata_only=args.metadata_only,
+        )
+    except ContextError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    if args.json:
+        print(json.dumps(pack, indent=2 if args.pretty else None))
+    else:
+        print(render_markdown(pack), end="")
+    return 0
+
+
 def cmd_list(args: argparse.Namespace) -> int:
     for name in list_skills():
         print(name)
@@ -897,6 +1046,10 @@ def cmd_info(args: argparse.Namespace) -> int:
         setup_ver = _read_config_value("OBSIDIAN_WIKI_VERSION")
         print(f"vault:     {vp or '(unset)'}")
         print(f"setup ran: {setup_ver or '(never)'}")
+        if vp:
+            from obsidian_wiki.sync import get_remote
+            remote = get_remote(Path(vp).expanduser())
+            print(f"sync:      {remote if remote else '(not configured — run: obsidian-wiki sync-setup <url>)'}")
     print(f"bundled skills: {len(bundled)}")
     print()
     print("Agent skill install status:")
@@ -930,6 +1083,18 @@ def build_parser() -> argparse.ArgumentParser:
     sp = sub.add_parser("setup", help="install skills into your agents and write config (default)")
     _add_setup_args(sp)
     sp.set_defaults(func=cmd_setup)
+
+    ssp = sub.add_parser(
+        "sync-setup",
+        help="configure GitHub sync for your vault (git init, .gitignore, remote)",
+    )
+    ssp.add_argument("remote", help="GitHub (or any git host) repo URL, e.g. https://github.com/you/my-wiki.git")
+    ssp.add_argument("--vault", metavar="PATH", help="absolute path to your Obsidian vault")
+    ssp.set_defaults(func=cmd_sync_setup)
+
+    syp = sub.add_parser("sync", help="commit and push pending vault changes (git add -A, commit, push)")
+    syp.add_argument("--vault", metavar="PATH", help="absolute path to your Obsidian vault")
+    syp.set_defaults(func=cmd_sync)
 
     lp = sub.add_parser("list", help="list bundled skills")
     lp.set_defaults(func=cmd_list)
@@ -1022,6 +1187,15 @@ def build_parser() -> argparse.ArgumentParser:
     lt.add_argument("--json", action="store_true", help="emit machine-readable JSON")
     lt.add_argument("--pretty", action="store_true", help="pretty-print JSON output")
     lt.add_argument("--strict", action="store_true", help="exit non-zero on warnings as well as failures")
+    lt.add_argument(
+        "--strict-trust",
+        action="store_true",
+        help=(
+            "fail lint on missing trust fields, ledger errors, stale reviews, and "
+            "score mismatches (default: legacy mode, these are warnings only). "
+            "Also settable per-vault via OBSIDIAN_TRUST_STRICT=1 in the config."
+        ),
+    )
     lt.set_defaults(func=cmd_lint)
 
     tr = sub.add_parser(
@@ -1070,6 +1244,34 @@ def build_parser() -> argparse.ArgumentParser:
     qq.add_argument("--pretty", action="store_true", help="pretty-print JSON output")
     qq.set_defaults(func=cmd_query)
 
+    cp = sub.add_parser(
+        "context-pack",
+        aliases=["context"],
+        help="compile a token-bounded vault slice for a downstream agent",
+    )
+    cp.add_argument("topic", nargs="?", help="topic to retrieve; omit only with --recent")
+    cp.add_argument("--vault", help="override OBSIDIAN_VAULT_PATH")
+    cp.add_argument(
+        "--budget",
+        type=int,
+        default=8_000,
+        help="maximum estimated output tokens, 256..100000 (default: 8000)",
+    )
+    cp.add_argument("--recent", action="store_true", help="select recently updated notes")
+    cp.add_argument(
+        "--public-only",
+        action="store_true",
+        help="exclude visibility/internal and visibility/pii notes",
+    )
+    cp.add_argument(
+        "--metadata-only",
+        action="store_true",
+        help="emit titles, provenance, and summaries without body excerpts",
+    )
+    cp.add_argument("--json", action="store_true", help="emit structured JSON")
+    cp.add_argument("--pretty", action="store_true", help="pretty-print JSON output")
+    cp.set_defaults(func=cmd_context_pack)
+
     return p
 
 
@@ -1093,6 +1295,12 @@ def _add_setup_args(sp: argparse.ArgumentParser) -> None:
         "--copy",
         action="store_true",
         help="copy skill files instead of symlinking to the installed package",
+    )
+    sp.add_argument(
+        "--remote",
+        metavar="URL",
+        help="GitHub (or any git host) repo URL for vault sync — skips the interactive "
+        "prompt and configures it non-interactively (see also: obsidian-wiki sync-setup)",
     )
 
 
