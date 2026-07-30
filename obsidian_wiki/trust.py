@@ -27,6 +27,14 @@ TRUST_SKIP_DIRS = frozenset(
     "_raw _archived _staging _archives _bootstrap .obsidian .git".split()
 )
 TRUST_RESERVED_STEMS = frozenset({"index", "log", "hot", "_insights"})
+# Trust enforcement covers the framework's knowledge-graph category directories
+# only. Mixed vaults may hold personal/companion directories (owner notes,
+# imported archives) and root-level files that never carry trust frontmatter;
+# those are outside the knowledge graph and outside trust review, matching the
+# page scope wiki-lint audits.
+TRUST_CONTENT_DIRS = frozenset(
+    "concepts entities skills references synthesis journal projects misc".split()
+)
 ALLOWED_LIFECYCLES = frozenset({"draft", "reviewed", "verified", "disputed", "archived"})
 _REQUIRED_TRUST_KEYS = ("base_confidence", "lifecycle", "updated")
 _VOLATILE_CONFIDENCE_KEYS = (
@@ -192,6 +200,8 @@ def iter_trust_pages(vault: Path) -> list[Path]:
     pages: list[Path] = []
     for path in vault.rglob("*.md"):
         rel = path.relative_to(vault)
+        if not rel.parts or rel.parts[0] not in TRUST_CONTENT_DIRS:
+            continue
         if any(part in TRUST_SKIP_DIRS for part in rel.parts):
             continue
         if path.stem in TRUST_RESERVED_STEMS:
