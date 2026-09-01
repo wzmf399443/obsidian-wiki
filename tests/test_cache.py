@@ -1,5 +1,6 @@
 """Tests for the content-hash cache module."""
 import json
+import os
 import subprocess
 import sys
 import time
@@ -8,14 +9,18 @@ from pathlib import Path
 import pytest
 
 from obsidian_wiki.cache import (
+    ManifestLockTimeout,
     check_sources,
     compute_hash,
     hash_file,
+    manifest_lock,
     sha256_file,
     sha256_dir,
     update_source,
     _load_manifest,
+    _lock_path,
     _manifest_path,
+    _write_manifest,
 )
 
 
@@ -68,6 +73,20 @@ class TestHashing:
     def test_compute_hash_dispatches(self, src_file, src_dir):
         assert len(compute_hash(src_file)) == 64  # hex SHA-256
         assert len(compute_hash(src_dir)) == 64
+
+    def test_sha256_dir_independent_of_path_separator(self, src_dir):
+        """Hash must match hashlib computed with POSIX separators regardless of platform (#178)."""
+        import hashlib
+
+        (src_dir / "sub").mkdir()
+        (src_dir / "sub" / "c.py").write_text("z = 3")
+
+        h = hashlib.sha256()
+        for fp in sorted(src_dir.rglob("*"), key=lambda p: p.relative_to(src_dir).as_posix()):
+            if fp.is_file():
+                h.update(fp.relative_to(src_dir).as_posix().encode())
+                h.update(sha256_file(fp).encode())
+        assert sha256_dir(src_dir) == h.hexdigest()
 
     def test_hash_file_alias(self, src_file):
         assert hash_file(src_file) == sha256_file(src_file)
@@ -248,3 +267,79 @@ class TestCacheCLI:
         assert proc.returncode == 0
         sources = _load_manifest(vault)
         assert sources[str(src_file)]["pages_produced"] == ["concepts/foo.md", "entities/bar.md"]
+
+
+class TestManifestLock:
+    """Concurrent writers must serialize instead of clobbering the manifest."""
+
+    def test_lock_is_released_after_use(self, vault):
+        with manifest_lock(vault):
+            assert _lock_path(vault).exists()
+        assert not _lock_path(vault).exists()
+
+    def test_second_holder_times_out(self, vault):
+        with manifest_lock(vault):
+            with pytest.raises(ManifestLockTimeout):
+                with manifest_lock(vault, timeout=0.3):
+                    pass
+
+    def test_stale_lock_is_stolen(self, vault):
+        lock = _lock_path(vault)
+        lock.write_text("999999")
+        old = time.time() - 120
+        os.utime(lock, (old, old))
+        with manifest_lock(vault, timeout=0.5, stale_after=60.0):
+            pass
+        assert not lock.exists()
+
+    def test_lock_released_when_body_raises(self, vault):
+        with pytest.raises(ValueError):
+            with manifest_lock(vault):
+                raise ValueError("boom")
+        assert not _lock_path(vault).exists()
+
+    def test_update_source_leaves_no_lock_behind(self, vault, src_file):
+        update_source(vault, src_file)
+        assert not _lock_path(vault).exists()
+
+    def test_concurrent_updates_both_survive(self, vault, tmp_path):
+        """The race the lock exists for: two processes, neither entry lost."""
+        a = tmp_path / "a.md"
+        a.write_text("alpha", encoding="utf-8")
+        b = tmp_path / "b.md"
+        b.write_text("beta", encoding="utf-8")
+        code = (
+            "import sys;from pathlib import Path;"
+            "from obsidian_wiki.cache import update_source;"
+            "update_source(Path(sys.argv[1]), Path(sys.argv[2]))"
+        )
+        env = {**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parent.parent)}
+        procs = [
+            subprocess.Popen([sys.executable, "-c", code, str(vault), str(src)], env=env)
+            for src in (a, b)
+        ]
+        for p in procs:
+            assert p.wait(timeout=30) == 0
+        sources = _load_manifest(vault)
+        assert str(a) in sources and str(b) in sources
+
+
+class TestAtomicWrite:
+    def test_failed_write_leaves_original_intact(self, vault, monkeypatch):
+        _write_manifest(vault, {"sources": {"kept": {"content_hash": "abc"}}})
+
+        def boom(*args, **kwargs):
+            raise OSError("disk full")
+
+        monkeypatch.setattr("obsidian_wiki.cache.os.replace", boom)
+        with pytest.raises(OSError):
+            _write_manifest(vault, {"sources": {"lost": {}}})
+
+        assert _load_manifest(vault) == {"kept": {"content_hash": "abc"}}
+        leftovers = list(vault.glob(".manifest.json.*.tmp"))
+        assert leftovers == []
+
+    def test_manifest_is_never_partially_written(self, vault, src_file):
+        update_source(vault, src_file)
+        # A complete, parseable JSON document — never a truncated prefix.
+        json.loads(_manifest_path(vault).read_text(encoding="utf-8"))

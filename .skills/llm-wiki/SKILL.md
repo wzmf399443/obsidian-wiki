@@ -281,6 +281,8 @@ A Mermaid diagram reconstructed from the paper's prose is a synthesis, not a tra
 
 Every claim on a wiki page has one of three provenance states. Mark them inline so the reader (and future ingest passes) can tell signal from synthesis.
 
+These are framework defaults. A vault's `AGENTS.md` may add markers or workflow flags. Preserve owner extensions and treat orthogonal workflow flags separately from the extracted/inferred/ambiguous truth-state axis.
+
 | State | Marker | Meaning |
 |---|---|---|
 | **Extracted** | *(no marker — default)* | A paraphrase of something a source actually says. |
@@ -336,6 +338,8 @@ Each entry has two required fields:
 
 ### Allowed relationship types
 
+The table below is the framework default allowlist. A vault's `AGENTS.md` may extend it; consumers must use the effective allowlist and preserve owner semantics without coercion.
+
 | Type | Meaning | Example |
 |---|---|---|
 | `extends` | This page builds on or generalises the target | GPT extends Transformer Architecture |
@@ -358,6 +362,10 @@ Skills that read `relationships:`: `wiki-export` (emits typed edges), `cross-lin
 ## Confidence and Lifecycle
 
 Every page carries two orthogonal trust signals plus an optional supersession link.
+
+The requiredness and lifecycle values below are framework defaults. A vault's `AGENTS.md` may extend lifecycle values or make trust fields optional. Validators must apply that effective owner schema while still validating any trust value that is present.
+
+The deterministic lint/trust consumer accepts owner schema through `OBSIDIAN_ALLOWED_LIFECYCLES`, `OBSIDIAN_ALLOWED_RELATIONSHIP_TYPES`, `OBSIDIAN_REQUIRED_TRUST_FIELDS`, and `OBSIDIAN_SCHEMA_SOURCE`. Resolution precedence is CLI > environment/config > these framework defaults (with lifecycle and relationship extensions additive). Explicit blank or whitespace-only values fail closed; omit the variable to select defaults. `wiki-lint/SKILL.md` owns the operational invocation contract.
 
 ### Required fields
 
@@ -436,6 +444,8 @@ Five states. **`stale` is not a state** — it is a computed overlay: `is_stale 
 | `archived` | Manual edit, or ingest skill setting `superseded_by` | Terminal |
 
 Only ingest skills set `draft`. All other transitions require a human editor. Update `lifecycle_changed` whenever the state changes.
+
+Two edge classes are therefore **illegal** and are reported by `obsidian-wiki lint` as `illegal_lifecycle_transitions`: anything falling back to `draft` (`reviewed|verified|disputed → draft`), and any exit from `archived` (it is terminal — restoring a page is a deliberate delete-and-recreate, not a transition). The check compares against the lifecycle recorded in `_meta/trust-ledger.json` at the page's last review, so it only sees pages that have been reviewed at least once.
 
 ## Importance Tiering
 
@@ -535,13 +545,31 @@ Every write skill reads `OBSIDIAN_LINK_FORMAT` from config before generating lin
 
 ## Config Resolution Protocol
 
-**All skills must resolve config using this algorithm — do not hard-code `.env` or `~/.obsidian-wiki/config` directly.** This ensures single-vault, multi-vault, project-local, and VPS setups all work correctly.
+**All skills must resolve config using this algorithm — do not hard-code `.env` or the global config path directly.** This ensures single-vault, multi-vault, project-local, and VPS setups all work correctly.
+
+### Global config directory
+
+The global config directory is **XDG-style**: `$XDG_CONFIG_HOME/obsidian-wiki` (default `~/.config/obsidian-wiki`). Installs that already have a `~/.obsidian-wiki` directory keep using it — so an existing setup never breaks — but any **new** install lands under the XDG path. Resolve it with:
+
+```
+obsidian_wiki_config_dir() {
+  local xdg_dir="${XDG_CONFIG_HOME:-$HOME/.config}/obsidian-wiki"
+  local legacy_dir="$HOME/.obsidian-wiki"
+  if [[ -d "$legacy_dir" && ! -e "$xdg_dir" ]]; then
+    echo "$legacy_dir"
+  else
+    echo "$xdg_dir"
+  fi
+}
+```
+
+Everywhere below, "the global config dir" means `$(obsidian_wiki_config_dir)`, and "the global config" means `$(obsidian_wiki_config_dir)/config`.
 
 ### Resolution order
 
-0. **Inline vault override (`@name`)** — if the user's request contains an `@<name>` token (e.g. `@work save this`, `query @personal about X`), resolve `~/.obsidian-wiki/config.<name>` directly and use its `OBSIDIAN_VAULT_PATH`. This **overrides** both the CWD `.env` walk-up and the active symlink, and applies to **that invocation only** — never run `ln -sf` or otherwise change the active vault for an `@name` request. If `~/.obsidian-wiki/config.<name>` doesn't exist, tell the user it doesn't exist and list the available vaults (the `wiki-switch` **List** logic), then stop — do **not** silently fall back to the default. The `@name` is a routing directive, not content: strip it out before treating the rest of the request as the actual instruction or page text.
+0. **Inline vault override (`@name`)** — if the user's request contains an `@<name>` token (e.g. `@work save this`, `query @personal about X`), resolve `<global config dir>/config.<name>` directly and use its `OBSIDIAN_VAULT_PATH`. This **overrides** both the CWD `.env` walk-up and the active symlink, and applies to **that invocation only** — never run `ln -sf` or otherwise change the active vault for an `@name` request. If `<global config dir>/config.<name>` doesn't exist, tell the user it doesn't exist and list the available vaults (the `wiki-switch` **List** logic), then stop — do **not** silently fall back to the default. The `@name` is a routing directive, not content: strip it out before treating the rest of the request as the actual instruction or page text.
 1. **Walk up from CWD** — look for a `.env` file in the current directory, then each parent, up to `$HOME`. Stop at the first `.env` that contains `OBSIDIAN_VAULT_PATH`.
-2. **Global config** — if no local `.env` found, read `~/.obsidian-wiki/config`.
+2. **Global config** — if no local `.env` found, read the global config (`$(obsidian_wiki_config_dir)/config`).
 3. **Prompt setup** — if neither exists, tell the user: "No config found. Run `wiki-setup` to initialize your wiki."
 
 `@name` is a **per-invocation override** — it targets one vault for one request. `/wiki-switch <name>` is the **persistent default** — it re-points the active symlink for all future requests. Use `@name` to touch the other vault from anywhere without disturbing your default ("brain") vault.
@@ -549,8 +577,10 @@ Every write skill reads `OBSIDIAN_LINK_FORMAT` from config before generating lin
 ```
 find_config() {
   # $1 = parsed @name from the request, if any (else empty)
+  local config_dir
+  config_dir="$(obsidian_wiki_config_dir)"
   if [[ -n "$1" ]]; then
-    [[ -f "$HOME/.obsidian-wiki/config.$1" ]] && { echo "$HOME/.obsidian-wiki/config.$1"; return; }
+    [[ -f "$config_dir/config.$1" ]] && { echo "$config_dir/config.$1"; return; }
     echo ""; return   # named vault missing → caller reports + lists, no fallback
   fi
   dir="$PWD"
@@ -558,7 +588,7 @@ find_config() {
     [[ -f "$dir/.env" ]] && grep -q "OBSIDIAN_VAULT_PATH" "$dir/.env" && { echo "$dir/.env"; return; }
     dir="$(dirname "$dir")"
   done
-  [[ -f "$HOME/.obsidian-wiki/config" ]] && { echo "$HOME/.obsidian-wiki/config"; return; }
+  [[ -f "$config_dir/config" ]] && { echo "$config_dir/config"; return; }
   echo ""
 }
 ```
@@ -569,14 +599,22 @@ Skills that write runtime state (e.g. `daily-update`) must scope that state to t
 
 ```
 VAULT_ID=$(echo "$OBSIDIAN_VAULT_PATH" | { md5sum 2>/dev/null || md5 -q -; } | cut -c1-8)
-STATE_DIR="$HOME/.obsidian-wiki/state/$VAULT_ID"
+STATE_DIR="$(obsidian_wiki_config_dir)/state/$VAULT_ID"
 ```
 
 ### Standard "Before You Start" block
 
 Every skill's setup section should read:
 
-> **Resolve config** — follow the Config Resolution Protocol in `llm-wiki/SKILL.md`. Honor an inline `@name` override first, then walk up from CWD for `.env`, fall back to `~/.obsidian-wiki/config`, else prompt setup. This gives `OBSIDIAN_VAULT_PATH` and any tool-specific path overrides.
+> **Resolve config** — follow the Config Resolution Protocol in `llm-wiki/SKILL.md`. Honor an inline `@name` override first, then walk up from CWD for `.env`, fall back to the global config, else prompt setup. This gives `OBSIDIAN_VAULT_PATH` and any tool-specific path overrides.
+
+## Writing Profile Resolution
+
+Before drafting or rewriting natural-language Markdown, resolve the global config directory with the XDG/legacy algorithm above, then read `<global config dir>/WRITING.md` when it exists. A missing or empty `WRITING.md` means there are no custom writing preferences. If that optional read fails, warn and continue with the default framework guidance.
+
+The effective precedence is framework invariants > current task/skill requirements > current project `AGENTS.md` > vault `AGENTS.md` > global `WRITING.md`. Framework invariants include schema, provenance, and safety; operation-specific requirements remain authoritative for the current task. Unspecified project and vault rules are inherited from less-specific layers, and more specific same-topic rules win.
+
+Writing preferences apply only to newly drafted or rewritten natural-language fields and body content. This includes natural-language title and summary values in YAML frontmatter, but preferences cannot alter YAML syntax, required keys, structure, types, or machine-generated fields. JSON, structured logs, and pass-through content remain unchanged and retain their required formats and source fidelity.
 
 ## Environment Variables
 
@@ -594,6 +632,14 @@ The wiki is configured through environment variables (see `.env.example`). The o
 - `OBSIDIAN_LINK_FORMAT` — Internal link syntax: `wikilink` (default) or `markdown`
 - `WIKI_TOKEN_WARN_THRESHOLD` — Emit a warning in `wiki-status` when the full-wiki token estimate exceeds this value (default: `100000`). Set to `0` to disable. See `wiki-status` for the token footprint report.
 - `WIKI_STAGED_WRITES` — When `true`, all LLM-written pages go to `_staging/<category>/` for human review before promotion. See `wiki-setup` and `wiki-stage-commit` for details.
+- `CODE_UNDERSTANDING_BACKEND` — how wiki-update understands a project before distilling: `auto` (CodeGraph when available, else builtin ast-extract + rg; default), `builtin`, or `codegraph` (explicitly require; warn/error if unavailable).
+- `CODE_UNDERSTANDING_CODEGRAPH_BIN` — optional path to the codegraph binary when it isn't on PATH.
+- `CODE_UNDERSTANDING_CODEGRAPH_BIN` — optional path to the codegraph binary when it isn't on PATH.
+  Both resolve like `OBSIDIAN_VAULT_PATH`: a real environment variable wins (empty counts as
+  unset), then the nearest `.env` walking up from the project directory, then the global config
+  (`$(obsidian_wiki_config_dir)/config`), then the default.
+- `OBSIDIAN_MAX_PAGES_PER_INGEST` — cap on pages created/updated per `wiki-ingest` run (default: `15`). See `wiki-ingest`, Step 4.
+- `LINT_SCHEDULE` — how often `daily-update` also runs `wiki-lint`: `daily` \| `weekly` (default) \| `manual`. See `daily-update`, Step 4a.
 
 No API keys are needed — the agent running these skills already has LLM access built in.
 

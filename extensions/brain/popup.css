@@ -280,3 +280,97 @@ button:disabled {
 .status[data-tone="error"] {
   color: var(--error);
 }
+
+/* ── Tabs ───────────────────────────────────────────────────────────────── */
+
+.tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-top: 12px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+}
+
+.tab {
+  padding: 8px 10px;
+  border-radius: 9px;
+  color: var(--muted);
+  background: transparent;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.tab:hover {
+  color: var(--ink);
+}
+
+.tab.is-active {
+  color: #04100d;
+  background: var(--accent);
+}
+
+select.secondary {
+  appearance: none;
+  padding: 9px 11px;
+  border-radius: 12px;
+}
+
+/* ── Fill results ───────────────────────────────────────────────────────── */
+
+.results {
+  max-height: 190px;
+  overflow-y: auto;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.results:empty {
+  display: none;
+}
+
+.results li {
+  padding: 9px 10px;
+  margin-bottom: 6px;
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--success);
+  border-radius: 10px;
+  background: var(--panel);
+}
+
+.results li[data-confident="false"] {
+  border-left-color: var(--error);
+}
+
+.results .result-label {
+  margin: 0;
+  color: var(--ink);
+  font-size: 0.7rem;
+  font-weight: 750;
+}
+
+.results li[data-confident="false"] .result-label::after {
+  content: " · check";
+  color: var(--error);
+  font-weight: 600;
+}
+
+.results .result-value {
+  margin: 3px 0 0;
+  color: var(--muted);
+  font-size: 0.68rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.results .result-meta {
+  margin: 4px 0 0;
+  color: var(--faint);
+  font-size: 0.62rem;
+  overflow-wrap: anywhere;
+}

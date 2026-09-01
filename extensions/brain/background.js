@@ -1,3 +1,5 @@
+// Unchanged across the rename to Brain: this keys the saved _raw directory
+// handle, so renaming it would orphan every existing install's folder pick.
 const DB_NAME = "brain-vault-capture";
 const STORE_NAME = "handles";
 const RAW_HANDLE_KEY = "raw-folder";
@@ -17,7 +19,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 
     const rawDirectoryHandle = await loadRawHandle();
     if (!rawDirectoryHandle || !(await hasWritePermission(rawDirectoryHandle))) {
-      await showNeedsPopup("Open Brain Vault Capture and choose vault/_raw first.");
+      await showNeedsPopup("Open Brain and choose vault/_raw first.");
       return;
     }
 

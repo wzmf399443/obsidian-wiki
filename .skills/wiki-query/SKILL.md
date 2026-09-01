@@ -32,7 +32,7 @@ If the user's message contains a new finding, an action request ("save this", "b
 
 ## Before You Start
 
-1. **Resolve config** — follow the Config Resolution Protocol in `llm-wiki/SKILL.md` (inline `@name` override → walk up CWD for `.env` → `~/.obsidian-wiki/config` → prompt setup). For cross-project queries without `@name`, prefer `~/.obsidian-wiki/config` when present, even if it is a symlink to the vault `.env`. This gives `OBSIDIAN_VAULT_PATH` and any QMD variables. Works from any project directory.
+1. **Resolve config** — follow the Config Resolution Protocol in `llm-wiki/SKILL.md` (inline `@name` override → walk up CWD for `.env` → global config → prompt setup). For cross-project queries without `@name`, prefer the global config when present, even if it is a symlink to the vault `.env`. This gives `OBSIDIAN_VAULT_PATH` and any QMD variables. Works from any project directory.
 2. **Load QMD settings from the resolved config** before deciding retrieval strategy. If `QMD_WIKI_COLLECTION` is set, treat QMD as available subject only to transport/tool checks below. If it is empty or unset, say briefly why QMD is being skipped before using grep/page reads.
 3. If `$OBSIDIAN_VAULT_PATH/hot.md` exists, read it first — it gives you instant context on recent activity. If the user's question is about something ingested recently, hot.md may answer it before you even open `index.md`.
 4. Read `$OBSIDIAN_VAULT_PATH/index.md` to understand the wiki's scope and structure
@@ -66,18 +66,34 @@ obsidian-wiki graph-query "$OBSIDIAN_VAULT_PATH" "<question>" --pretty
 
 Output fields:
 
-- **`answer_type`**: `direct` | `path` | `list` | `gap` — shapes what to do next
+- **`answer_type`**: `direct` | `path` | `list` | `gap` | `impact` | `bridges` | `hubs` | `clusters` | `surprising` — shapes what to do next. The last five are **structural intents**: the question is about the shape of the vault, and the answer comes back fully computed in `graph` (see below) with no page reads at all.
+- **`graph`**: present only for structural intents — the computed answer. `null` otherwise.
 - **`candidates`**: top-ranked pages by title/tag/summary match + degree, with scores and summaries
 - **`should_read`**: the pages most worth opening — start here instead of speculatively reading many files
 - **`path`**: for multi-hop queries, the shortest wikilink path between the two concepts
 - **`god_nodes_relevant`**: hub pages related to your query terms — always useful context
 - **`index_only`**: if `true`, the top candidate's summary already answers the question — skip page reads
 
+**Structural intents** — these are answered entirely from the graph. The user's phrasing routes automatically:
+
+| The user asks | `answer_type` | `graph` contains |
+|---|---|---|
+| "what breaks if I delete X" / "what depends on X" / "what links to X" | `impact` | `direct_dependents`, `transitive_dependents`, `total` |
+| "which pages bridge my clusters" / "what would fragment my vault" | `bridges` | pages by betweenness, with `label` and `connects_labels` |
+| "what's central" / "top hubs" / "my main topics" | `hubs` | pages by degree, with in/out split |
+| "what clusters do I have" / "how is my wiki organised" | `clusters` | each cluster's `label`, `size`, `cohesion`, `fragmented` |
+| "surprising connections" / "unexpected links" | `surprising` | cross-cluster links, rarest first |
+
+Report the `graph` payload directly — do **not** re-derive it by reading pages. If a structural question names a page that can't be resolved, the CLI falls back to `direct` and `graph` is `null`.
+
 **Decision tree:**
 
-1. If `index_only: true` → answer directly from `candidates[0].summary`. Skip Steps 1–4, go to Step 5.
-2. If `answer_type == "path"` and `path` is non-empty → the connection is in `path`. Read only those pages.
-3. Otherwise → open only `should_read` pages (not all candidates). This replaces the speculative 5–10 page reads the old flow required.
+1. If `graph` is non-null → the structural answer is complete. Report it and stop; no page reads.
+2. If `index_only: true` → answer directly from `candidates[0].summary`. Skip Steps 1–4, go to Step 5.
+3. If `answer_type == "path"` and `path` is non-empty → the connection is in `path`. Read only those pages.
+4. Otherwise → open only `should_read` pages (not all candidates). This replaces the speculative 5–10 page reads the old flow required.
+
+> The graph used here excludes vault bookkeeping files (`index.md`, `log.md`, `hot.md`, `_insights.md`). They link to nearly every page, so including them made any two pages look ~2 hops apart and produced meaningless `A → index → B` paths.
 
 **Fallback** (if `obsidian-wiki` is not installed): proceed with Step 1 as normal using grep and index.md.
 
@@ -106,6 +122,11 @@ Build a candidate set *without opening any page bodies*:
   3. Summary field contains the query term
   4. `index.md` entry contains the query term
 - **Apply tier ordering within each rank bucket:** when two candidates score equally, prefer `tier: core` over `tier: supporting` over `tier: peripheral`. Read the `tier:` frontmatter field with the same cheap grep as other fields. Pages without a `tier:` field are treated as `supporting`.
+
+**Track retrieval counts as you go (for the transparency report in Step 5/6):**
+- `candidates_seen` — total distinct pages that matched *any* rank criterion above, before trimming to the top 5–10.
+- `candidates_used` — how many of those you actually carried forward into Steps 3/4.
+- `dropped` — `candidates_seen − candidates_used`, i.e. matches that existed but were never read. If this is non-zero, name the dropped pages (or the count if there are many) so the user knows retrieval wasn't exhaustive — this is not an error, just an honest accounting of what was left out.
 
 If you're in **index-only mode**, stop here. Answer from `summary:` fields, titles, and `index.md` descriptions only. Label the answer clearly: **"(index-only answer — page bodies not read; facts below are from page summaries and may miss nuance)"**. Then skip to Step 5.
 
@@ -158,6 +179,8 @@ Use `${QMD_CLI:-qmd} get "#docid"` to retrieve a ranked document by docid when C
 
 The returned snippets or ranked files act as pre-read section summaries. If they answer the question fully, skip Step 3 and go straight to Step 4 (reading only the pages QMD ranked highest). If not, use the ranked file list to guide which files to grep or read in Step 3.
 
+Fold QMD hits into the same `candidates_seen` count from Step 2 (dedupe by path — a page found by both frontmatter grep and QMD counts once).
+
 **Defensive filter: drop any `_raw/` path from wiki-collection results.** The wiki collection is supposed to index only compiled pages, but a misconfigured collection (see `.env.example`) can end up indexing `_raw/` — including stale drafts sitting in `_raw/_archived/` that were already superseded by a promoted page. Before using a QMD hit from `$QMD_WIKI_COLLECTION`, check its path: if it contains `_raw/`, discard it from the wiki-collection result set (it may still surface legitimately via `$QMD_PAPERS_COLLECTION`, cited as a raw source). This keeps a misconfigured collection degrading to "missing recall" rather than "silently citing a superseded draft as compiled knowledge." If you see `_raw/` paths coming back from the wiki collection, mention it in your working update so the user knows their collection scope needs fixing (see `.env.example` QMD section).
 
 **Also search `papers` when the question may have source material in `_raw/`:**
@@ -192,7 +215,14 @@ Run this step **only** for path/multi-hop queries (or when a relationship query 
 
 2. **Locate the endpoints.** Resolve X (and Y, if the query names two) to page paths using the registry from Step 2. If an endpoint is ambiguous, pick the `tier: core` candidate and note the assumption.
 
-3. **Bounded BFS.** Walk outward from X over the adjacency:
+3. **Bounded BFS.** If `obsidian-wiki` is installed, let the CLI do the walk over the wikilink graph first — it is exact and instant:
+
+   ```bash
+   obsidian-wiki graph-analyse "$OBSIDIAN_VAULT_PATH" --path "<X>" "<Y>"                  # two-endpoint: shortest chain + hop count
+   obsidian-wiki graph-analyse "$OBSIDIAN_VAULT_PATH" --around "<X>" --depth 3 [--direction out|in]  # one-endpoint: reachable pages by hop
+   ```
+
+   `--path` follows links in either direction unless `--direction out`; `--around --direction in` answers "what depends on X" (its blast radius). Then decorate the returned chain with the typed edges from step 1 (the CLI sees `[[wikilinks]]`, not relationship types). Otherwise, or to find alternate paths, walk manually:
    - **Max depth 3 hops** by default (the connection is rarely meaningful beyond that). Raise to 4 only if the user says "deep" / "however many hops it takes".
    - **Frontier cap:** stop expanding a node once the visited set exceeds ~60 pages — report partial results rather than fanning out across the whole vault.
    - For a **two-endpoint query** (X→Y): stop as soon as you find the shortest path; then continue briefly to surface up to 2 alternate paths if they exist.
@@ -247,8 +277,10 @@ Include a **`Source code:`** line in the answer with that absolute path. When th
 
 Append to `log.md`. This `log.md` append is the *only* write this skill performs — do not edit anything else.
 ```
-- [TIMESTAMP] QUERY query="the user's question" result_pages=N mode=normal|index_only|filtered escalated=true|false
+- [TIMESTAMP] QUERY query="the user's question" result_pages=N mode=normal|index_only|filtered escalated=true|false candidates_seen=N candidates_used=N dropped=N
 ```
+
+Use the counts tracked since Step 2. If a count wasn't tracked (e.g. index-only mode never built a full candidate set), write `0` rather than omitting the field — the log format should stay parseable.
 
 ## Answer Format
 
@@ -262,7 +294,11 @@ Structure answers like this:
 >
 > **Gaps:** [What the wiki doesn't cover that might be relevant]
 >
+> **Retrieval:** N candidates seen, M read, D dropped (untouched matches, if any: [[page-d]], [[page-e]])
+>
 > **Source code:** `<source_cwd>` — to implement, the relevant files are `…`.
 > (Say the word and I'll switch out of query mode to make the change.)
 
 The **Source code** line is optional — include it only for project-scoped queries where you resolved a `source_cwd` (see Step 5).
+
+The **Retrieval** line is always included — it's the transparency report from the counts tracked since Step 2 (mirrors the `candidates_seen`/`candidates_used`/`dropped` fields logged in Step 6). In index-only mode, report the counts from the frontmatter scan; if D is 0, drop the parenthetical rather than writing an empty list.

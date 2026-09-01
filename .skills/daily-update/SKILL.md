@@ -14,11 +14,11 @@ You run a lightweight maintenance pass over the wiki: check source freshness, re
 
 ## Before You Start
 
-1. **Resolve config** — follow the Config Resolution Protocol in `llm-wiki/SKILL.md` (inline `@name` override → walk up CWD for `.env` → `~/.obsidian-wiki/config` → prompt setup). This gives `OBSIDIAN_VAULT_PATH` and `OBSIDIAN_WIKI_REPO`.
+1. **Resolve config** — follow the Config Resolution Protocol in `llm-wiki/SKILL.md` (inline `@name` override → walk up CWD for `.env` → global config → prompt setup). This gives `OBSIDIAN_VAULT_PATH` and `OBSIDIAN_WIKI_REPO`.
 2. **Derive vault-scoped state dir** — all runtime state is scoped to the resolved vault, not global:
    ```bash
    VAULT_ID=$(echo "$OBSIDIAN_VAULT_PATH" | { md5sum 2>/dev/null || md5 -q -; } | cut -c1-8)
-   STATE_DIR="$HOME/.obsidian-wiki/state/$VAULT_ID"
+   STATE_DIR="$(obsidian_wiki_config_dir)/state/$VAULT_ID"
    mkdir -p "$STATE_DIR"
    ```
 3. Read `$OBSIDIAN_VAULT_PATH/.manifest.json`.
@@ -54,6 +54,28 @@ echo "<stale_count>" > "$STATE_DIR/.pending_delta"
 echo "$OBSIDIAN_VAULT_PATH" > "$STATE_DIR/.vault_path"
 ```
 
+**Step 4a: Scheduled health check (wiki-lint)**
+
+`LINT_SCHEDULE` (default `weekly`) controls how often this cycle also runs `wiki-lint`:
+
+- `manual` — never auto-run; skip this step entirely.
+- `daily` — run `wiki-lint` every cycle.
+- `weekly` — run `wiki-lint` only if `$STATE_DIR/.last_lint` is missing or older than 7 days.
+
+```bash
+LINT_SCHEDULE="${LINT_SCHEDULE:-weekly}"
+NOW=$(date +%s)
+LAST_LINT=$(cat "$STATE_DIR/.last_lint" 2>/dev/null || echo 0)
+```
+
+If the schedule says to run, invoke the `wiki-lint` skill, then record the run:
+
+```bash
+date +%s > "$STATE_DIR/.last_lint"
+```
+
+Fold its summary (broken links, orphans, stale pages found) into Step 7's report as a `Health check:` line; omit the line entirely on a cycle where lint didn't run.
+
 **Step 5: Spawn impl-validator**
 
 After the cycle, spawn `impl-validator` as a subagent:
@@ -79,7 +101,7 @@ Apply any FAILs before logging.
 
 Append to `$OBSIDIAN_VAULT_PATH/log.md`:
 ```
-- [TIMESTAMP] DAILY-UPDATE fresh=N stale=N missing=N index_added=N hot_refreshed=true|false
+- [TIMESTAMP] DAILY-UPDATE fresh=N stale=N missing=N index_added=N hot_refreshed=true|false lint=ran|skipped
 ```
 
 **Step 7: Report to user**
@@ -90,6 +112,7 @@ Append to `$OBSIDIAN_VAULT_PATH/log.md`:
 - Sources: N fresh · N stale · N missing
 - Index: N pages (N added, N removed)
 - hot.md: refreshed / up to date
+- Health check: N broken links, N orphans, N stale pages (omit this line if lint didn't run this cycle)
 
 Stale sources (run to sync):
   /wiki-history-ingest claude   — N sessions since last ingest
@@ -158,8 +181,9 @@ This initializes `$STATE_DIR/.last_update` so the terminal notification works im
 
 Tell the user:
 - The cron runs daily at 9 AM (or on next login if missed)
+- `wiki-lint` health checks run on the `LINT_SCHEDULE` cadence (default `weekly`) as part of that cycle — set `LINT_SCHEDULE=daily` or `manual` in `.env` to change it
 - Terminal notifications appear when the wiki is >20 hours stale
-- State is stored in `~/.obsidian-wiki/state/<vault-id>/` — supports multiple vaults independently
+- State is stored in `<global config dir>/state/<vault-id>/` (XDG-style `~/.config/obsidian-wiki` by default, or the legacy `~/.obsidian-wiki` if that already exists) — supports multiple vaults independently
 - They can run `/daily-update` anytime to force a sync
 - Logs go to `/tmp/obsidian-wiki-daily.log`
 
