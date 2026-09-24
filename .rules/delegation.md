@@ -74,6 +74,14 @@ If AGENTS.md/CLAUDE.md was edited this session, tell subagents to READ the file
 from disk — the harness caches agent-context files, so the injected copy can be
 stale right after an edit (observed 2026-07-03).
 
+**Second-hand facts (2026-09-16/17, 09-17, 09-21).** Anything you relay without having just
+read its source — an upstream report's summary, a subagent's CROSS-BATCH suggestion, a
+requester's "this part is new" — may be stale or wrong: cite its source (ticket + section,
+snapshot date); re-verify status/date/quantity claims against the source, and "new content"
+claims against the previous run's reports, before relaying or applying them; and tell the
+agent "the source is authoritative — if it disagrees with this wording, follow the source
+and report it under COORDINATOR TEXT CORRECTED".
+
 ## 4. Report contract (what comes back)
 
 - **Conclusions only**, ≤50 lines: findings, decisions needed, `file:line`
@@ -88,6 +96,15 @@ stale right after an edit (observed 2026-07-03).
   the quote is the only rollback basis.
 - If the agent could not finish, the report says exactly what remains — a partial
   honest report beats a padded complete-looking one.
+- **Write-heavy tasks also save the report itself** to `reports/<BATCH>.md` AND return it
+  as the final message — after an interruption it is the only proof of "done" vs
+  "half-written" (2026-09-16/17). Name the file after the batch/task: on 2026-09-24 the
+  harness refused a subagent's write to `REPORT.md` ("Subagents should return findings as
+  text") while accepting `VERIFY.md` and `reports/B1.md`. If a write is refused, the agent
+  does not route around it — it returns the text and the coordinator saves it.
+- **Never hand a finding over**: a finding outside the agent's shard is claimed and marked
+  `CROSS-CLUSTER` for the coordinator to dedup — parallel agents have no channel, so a
+  handover is a silent drop (2026-08-27).
 
 ## 5. Escalation & de-escalation ladder
 
@@ -103,6 +120,18 @@ stale right after an edit (observed 2026-07-03).
 - **Hard cap: two retry rounds per approach.** After that, the approach is wrong,
   not the execution — change strategy or surface to the user with the trail
   (`.rules/judgment.md` §Wrong-direction has the signals).
+
+**Interruptions are not failures (2026-07-24, 08-27, 09-04, 09-16/17).** A quota wall, stream
+stall or user stop is not a failed attempt: resuming is not a retry round and moves no one on
+this ladder (a resumed agent that then fails is handled by the ladder as usual). Its writes may
+already be on disk (signal: target pages share one fresh `updated`, the manifest hash lags the
+disk), so check yourself (report file present, `cmp` vs backup) — never pass an mtime guess on
+as fact — and every resume or re-dispatch prompt carries that verified state + "may be partially
+written — re-read before writing, never re-merge". Session/daily/spend-limit cap → wait for the
+reset, then resume by SendMessage (keeps context); model monthly cap → don't resume (it hits the
+wall again): fresh agent at an available tier with the predecessor's on-disk list. Cutting
+concurrency: stop the latest-started / still-reading agents first. Two consecutive stalls with no
+write progress → consider another model. Coordinator run sheet: templates-ingest-coordination.md (T6).
 
 ## 6. Verify, don't self-certify
 

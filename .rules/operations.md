@@ -10,6 +10,16 @@ before computing a delta by hand, or before touching `.manifest.json`.
 > belongs in a vault. It lives here (the tool repo's `.rules/`), not in a vault
 > `skills/` page — see the `skills/` guardrail in `.skills/llm-wiki/SKILL.md`.
 
+## Mixed-vault scope (<private-dir>/ <private-dir>/)
+
+`<private-dir>/` and `<private-dir>/` are the owner's private notes: never read, edit, cite or scan them (vault `CLAUDE.md` `## Scope`). The whitelist is `TRUST_CONTENT_DIRS` in `obsidian_wiki/trust.py` (concepts entities skills references synthesis journal projects misc) plus root special files. This scope bug has recurred in six carriers (tool, agent, lint script, exclude flag, bare grep, root glob), each time silently.
+
+- **Whitelist + post-check, in any environment (08-17)**: build `scope.txt` with `find <vault> \( -path '*/<company>' -o -path '*/<private-dir>' \) -prune -o -name '*.md' -print` (rebuild it after new pages are created) and search it with `/usr/bin/grep -n PAT $(< scope.txt)`; `--exclude-dir=<company> --exclude-dir=<private-dir>` is never the only defense — whatever the method, a result counts only after `grep -c` of the output for <company>/<private-dir> paths returns 0.
+- **Bare `grep` is a wrapper (09-23)**: in the claude-work shell `grep` is a shell function that runs the Claude binary as ugrep (`type grep`), so use `/usr/bin/grep`, and dispatch prompts say "bare grep is a wrapper — don't rely on it".
+- **No root glob (09-23)**: never `*`/`**` at the vault root (`ls */x.md` expands into <private-dir>/ and <private-dir>/); find files only via `scope.txt` or the listed content dirs (`concepts entities skills references synthesis journal projects`, plus `misc` if it exists). Every producer, verifier and lint prompt carries this sentence (to-do: add it to the vault `CLAUDE.md` `## Scope`).
+- **Exclude first, never scan-then-filter (08-05)**: if you need something inside <private-dir>/ or <private-dir>/, ask the owner to paste it; if unsure whether a dir is in scope, ask first (to-do: bake the whitelist into the skills' example grep commands).
+- **Scope-check every new carrier (07-29, 08-12)**: before a tool with "whole-vault" semantics or a new vault-scanning script runs on this vault, grep its include/exclude list against the whitelist (include ⊆ content dirs + special files, or exclude ⊇ <company>, <private-dir>); when a lint suite is reused, "all scripts agree on scope" is a runner acceptance item.
+
 ## `.manifest.json` loss & rebuild
 
 **Symptom.** The vault's `.manifest.json` is missing entirely, yet `log.md` has
@@ -23,17 +33,10 @@ vault that is already complete and only lost its tracking file, a full re-ingest
 re-distills every page and causes massive duplicate churn. The right move is to
 rebuild the tracking baseline, then ingest only the true delta.
 
-**Rebuild procedure** (done 2026-07-03, 132-file baseline):
-- Scan every unchanged `.md` under the sources dir (exclude `.git/`,
-  `attachments/`, and a root-level `INDEX.md`).
-- For each, write the current `sha256` as `content_hash`.
-- Backfill `ingested_at` uniformly to the last known ingest time (read from
-  `log.md`), and mark each rebuilt entry `"backfilled": true` with a
-  `backfill_note` explaining why. Add top-level `rebuilt_at` / `rebuild_reason`.
-- Deliberately exclude that day's changed (delta) files — add their real entries
-  only after the actual ingest completes.
-- Sanity check: rebuilt count + same-day delta should equal an independent scan
-  of in-scope files (132 + 6 = 138, cross-checked by a separate scan agent).
+**Rebuild the tracking baseline:**
+- scan every unchanged `.md` under the sources dir (exclude `.git/`, `attachments/`, a root-level `INDEX.md`) and write each file's current `sha256` as `content_hash`; backfill `ingested_at` uniformly to the last known ingest time (read from `log.md`); mark each rebuilt entry `"backfilled": true` with a `backfill_note` explaining why; add top-level `rebuilt_at` / `rebuild_reason`;
+- exclude that day's changed (delta) files — add their real entries only after the actual ingest completes;
+- sanity check: rebuilt count + same-day delta should equal an independent scan of in-scope files (cross-checked by a separate scan agent).
 
 ### 變體：部分條目遺失 → delta 報大量假 NEW（2026-07-16）
 
@@ -43,7 +46,9 @@ rebuild the tracking baseline, then ingest only the true delta.
 是否齊備；③ 各檔 `fetched_at` 是否早於該次 ingest 時間、內容是否與 git HEAD
 一致（即入庫後未再變）。三者皆成立 → **backfill 條目（標 `backfilled` +
 `backfill_note`，pages 批次層級歸屬），不重新 ingest**；補完跑 manual_delta
-複核歸零。實例：2026-07-16 USEN/Hexa 兩樹 20 檔（07-15 入庫、條目未落盤）。
+複核歸零。
+
+History: operations-history.md §`.manifest.json` loss & rebuild
 
 ## Delta detection without a manifest
 
@@ -62,24 +67,37 @@ the delta — no full re-read needed:
 source mtimes must not have been clobbered by a checkout/copy (cross-check that
 mtimes line up with the source repo's commit times).
 
+**Is a `modified` source a real delta? (09-01, 09-02, 09-04, 09-23)** Judge by the source header `jira_updated_max`, not by git or by comment-heading timestamps:
+- `jira_updated_max` later than the last `ingested_at` ⇒ substantive-change candidate — never classify it fetched_at-only because no new `### name — time` heading appeared (editing a Jira comment keeps its created timestamp; that is how QA backfills like PENDING→PASS and revised decisions arrive).
+- Cheapest proof first: revert the exporter header fields (`fetched_at`, `jira_updated_max`) to the previous values and re-hash — equal to the manifest `content_hash` ⇒ content unchanged: SKIP, with that proof in `skip_note` — status spot-check still required (cheap insurance: it catches a status word the previous run missed). Otherwise diff against the previous version (`sources_snapshot/`, keep one per run; to-do: jira-ingest committing after each fetch would allow `git diff`), or compare section by section against the page's claims (QA result tables, PENDING/待確認 markers, Design Decisions).
+- For a hash-changed source (header-reverted re-hash ≠ `content_hash`), SKIP only if its owning page's `created`/last substantive `updated` ≥ the source's `jira_updated_max` AND a spot-check that includes the status word matches; any status difference is a substantive delta (→ compare section by section), and every dispatch prompt's spot-check has a "status matches" item.
+
 ## obsidian-wiki CLI gotchas
 
-### The CLI is not global — invoke via `uv run`
+### The CLI is not global — call `.venv/bin/obsidian-wiki` directly (verified 2026-09-24)
 
 The package is installed only in the project venv at
 `/Users/<user>/<workspace>/obsidian-wiki/.venv` (uv-managed), not globally. Calling
-`obsidian-wiki graph-query ...` bare returns `command not found`. From the
-project dir, use:
+`obsidian-wiki graph-query ...` bare returns `command not found`, and since
+2026-09-02 `uv run obsidian-wiki` fails at dependency resolution (`No solution
+found`: the project declares `requires-python>=3.9`, but the `server` extra's
+`mcp>=2.0` needs Python >=3.10). Call the venv binary by absolute path, and
+hardcode that path in dispatch prompts:
 
 ```bash
-uv run obsidian-wiki graph-query <vault_path> "<question>" --pretty
+/Users/<user>/<workspace>/obsidian-wiki/.venv/bin/obsidian-wiki graph-query <vault_path> "<question>" --pretty
 ```
+
+A `uv run` failure is environmental: don't retry it, don't conclude "CLI not
+installed", and never run `uv sync` to repair it (re-resolving could alter the
+working venv). Root-fix candidate (upstream PR): `requires-python>=3.10`, or keep
+`mcp` in a non-default optional extra.
 
 It prints a warning — `... is installed but setup has never been run. Run:
 obsidian-wiki setup --vault ...` — which is harmless for `graph-query`
 (`candidates`/`should_read`/`index_only` still return normally). To silence it
-and make the command global, run `obsidian-wiki setup --vault <vault_path>` once,
-or `pip install obsidian-wiki` globally.
+and make the command global, run `.venv/bin/obsidian-wiki setup --vault <vault_path>`
+once, or `pip install obsidian-wiki` globally.
 
 ### `cache-check` / `batch-plan` falsely report everything modified
 
@@ -110,30 +128,19 @@ file mtimes.
   rewriting the walk.
 - To-do: fix the CLI comparison logic, or run `obsidian-wiki setup` to rule out
   the never-set-up variable and retest. ^[inferred]
+- **`--json` stdout isn't clean (08-06)**: the setup warning is printed on stdout before the JSON, so parse from the first `{` (`raw[raw.index('{'):]`) for every `--json`; pass many `--page` args via xargs (`sed 's/^/--page /' pages.txt | xargs /Users/<user>/<workspace>/obsidian-wiki/.venv/bin/obsidian-wiki trust-record <vault> … --json > out.txt 2>&1`), never via a shell-variable expansion.
+- **graph-query 0 hits on Chinese terms ≠ no page (08-14)**: never conclude "no existing page" from it; before creating a page, re-check with a scoped vault grep (§Mixed-vault scope) by keyword AND ticket ID.
+- **Subprocess CLI tests pin `cwd`, not only `HOME` (07-30)**: config resolution walks up from cwd to a `.env`, so the repo-root `.env` leaks the real vault into tests; `run_cli()` in `tests/test_context_pack_cli.py` defaults cwd to the fake HOME since ea1633a (#174) — for any test that doesn't pin cwd, run pytest from a directory without `.env`.
+- Queued 2026-07-29 (status not re-checked): 4 pages lost their sources in the 07-06 reorg (rwg-order-routing, rwg-data-correction-tools, rwg-addons-launch-plan, partner-api-sevenrooms-compat) — re-pull them, then `trust-record --page` each.
 
 ## `.manifest.json` structure & jq recipes (verified 2026-07-08)
 
-Top level is `{version, last_updated, sources, projects, stats}`. `sources` is
-an **object** keyed by absolute source path — NOT an array (a 2026-07-07 session
-note claimed array with `.key` fields; jq-verified object on 2026-07-08).
-Three **virtual keys** are not file paths: `conversation:<slug>` ×2 and
-`inline:<slug>:<date>` ×1. Scripts that assume every key is a path must
-special-case keys not starting with `/` — and never delete them as "missing".
+Top level is `{version, last_updated, sources, projects, stats}`. `sources` is an **object** (NOT an array) keyed by source path — `~` form since 2026-07-16 (§sources 路徑慣例).
+**Virtual keys** — keys not starting with `/` or `~` (`conversation:*`, `inline:*`; 13 as of 2026-09-23) — are not file paths: scripts that assume every key is a path must special-case them, and never delete them as "missing". `source_removed: true` entries are excluded from missing counts.
 
-jq pitfalls and working recipes:
+jq pitfalls: top-level `to_entries | .[-1]` returns the last *top-level* key (`stats`/`last_updated`…), not the last source; `.sources[-1]` errors (can't index object with number). An `inline:<slug>:<date>` key's date is its capture date, not evidence the manifest is stale.
 
-- Top-level `to_entries | .[-1]` returns the last *top-level* key
-  (`stats`/`last_updated`…), not the last source. `.sources[-1]` errors
-  (can't index object with number). Also: the last sources entry is currently
-  the `inline:...:2026-06-23` virtual key — its embedded date is the capture
-  date, not evidence the manifest is stale.
-
-```bash
-jq -r '.sources | length' .manifest.json
-jq -r '.sources | to_entries | .[-3:][] | "\(.key) | \(.value.ingested_at // "?")"' .manifest.json
-jq -r '[.sources | to_entries[] | select(.value.ingested_at >= "2026-07-01")] | length' .manifest.json
-jq -r '.sources | to_entries[] | select(.key | contains("<project-key>-18430"))' .manifest.json
-```
+History: operations-history.md §`.manifest.json` structure & jq recipes (verified 2026-07-08)
 
 ### mtime 對賬 audit（5 秒查 bookkeeping 落盤）
 
@@ -172,10 +179,7 @@ subagent 連 source 都不必重讀。
 
 ## sources 路徑慣例：機器無關的 `~` 形式（owner 決策 2026-07-16）
 
-Vault 在兩台機器間同步，home dir 不同（`/Users/<user>` 與 `/Users/<user-b>`），
-兩台的來源目錄統一為 **`~/<workspace>/wiki-source`**。07-15 PM lint（work 機）曾發現
-71 頁 sources「失聯」並提出單向 remap；07-16 於 <user> 機驗證失聯與否取決於
-機器 → owner 拍板改用 `~` 形式，2026-07-16 已全面執行：
+Vault 在兩台機器間同步、home dir 不同（`/Users/<user>` 與 `/Users/<user-b>`），絕對路徑是否「失聯」取決於機器；兩台的來源目錄統一為 **`~/<workspace>/wiki-source`**：
 
 - **寫入慣例（強制）**：wiki 頁 `sources:` 與 `.manifest.json` key 一律寫
   `~/<workspace>/wiki-source/...`（其他本機路徑同理用 `~` 前綴，如
@@ -183,35 +187,20 @@ Vault 在兩台機器間同步，home dir 不同（`/Users/<user>` 與 `/Users/<
   也不得照抄舊頁面/舊 manifest 的絕對路徑慣例。
 - **消費端**：任何讀這些路徑的 script 必須 `os.path.expanduser()`；
   `manual_delta.py` 已改（含 virtual-key 判斷：非 `/` 且非 `~` 開頭才算 virtual）。
-- **已執行的 remap（backup：`~/.claude/backups/2026-07-16-sources-remap/`）**：
-  vault 76 檔 311 處＋manifest 231 key 全改 `~` 形式（log.md 除外——歷史紀錄
-  不改寫）；<user> 機 `~/<workspace>/wiki_source` 已 rename 為 `wiki-source`＋留同名
-  相容 symlink（外部工具沿舊路徑仍可用）；`.env` 的 `OBSIDIAN_SOURCES_DIR`
-  已指向新路徑（`.env` gitignored、每機一份）。
+- **相容與例外**：<user> 機的舊路徑 `~/<workspace>/wiki_source` 保留為指向 `wiki-source` 的相容 symlink（外部工具沿舊路徑仍可用）；`.env`（含 `OBSIDIAN_SOURCES_DIR`）gitignored、每機一份；`log.md` 內的舊絕對路徑不改寫（歷史紀錄）。
 - **待查（work 機）**：07-15 lint 在 work 機報 14 條 remap MISS，但 07-16 在
   <user> 機逐條檢查 0 miss — 推測 work 機的 wiki-source 少了部分檔案
   （兩機 sources 同步 drift）^[inferred]。下次在 work 機 session 時複核。
 
-## wiki_source 2026-07 reorg drift — resolved 2026-07-08
+History: operations-history.md §sources 路徑慣例：機器無關的 `~` 形式（owner 決策 2026-07-16）
 
-Background: flat `<project-key>-*_slug.md` exports were moved/consolidated into epic
-folders (e.g. `<project-key>-17584 RwG Add-Ons Payment & Revamp/`), leaving ~72 stale
-manifest keys; ~855 `attachments/` images are policy-excluded from ingest and
-must be excluded from delta scans or they all read as NEW.
+## wiki-source standing rules (from the 2026-07 reorg): attachments/, removed exports, 18430 duplicate
 
-2026-07-08 cleanup (backup: `<vault>/.manifest.json.bak-20260708`):
+- **`attachments/` excluded**: the ~855 `attachments/` images are policy-excluded from ingest and must also be excluded from delta scans, or they all read as NEW.
+- **Removed exports: annotate, never delete the key**: a deleted source export keeps its manifest key, annotated `source_removed: true` + `removed_note` (keeps ingest provenance; delta scripts skip these, so the MISSING pile doesn't need re-interpreting each run). A duplicate old key (same ticket re-tracked under a new path) is a different case — the 07-08 cleanup deleted those.
+- **Per-run duplicate check**: `<project-key>-18430.md` exists at the wiki-source root AND in `<project-key>-17584 RwG Add-Ons Payment & Revamp/` (both still present and both tracked — manifest key + git — verified 2026-09-24). Which copy is fresher flips between syncs — don't assume; compare mtime/hash each run and ingest the changed one.
 
-- **25 duplicate old keys deleted** — same ticket re-tracked under a new path.
-- **44 deleted sub-ticket exports annotated `source_removed: true`** (with
-  `removed_note`) instead of deleted — keeps ingest provenance, and delta
-  scripts skip them so the MISSING pile doesn't need re-interpreting each run.
-- **3 virtual keys kept** untouched.
-- Manifest went 225 → 200 entries; `stats` counters left as historical.
-
-Duplicate `<project-key>-18430.md` exists at wiki_source root AND inside the RwG
-folder, both tracked. Which copy is fresher flips between syncs (07-07: folder
-newer; 07-08: root newer — root is where uncommitted Jira syncs land ^[inferred]).
-Don't assume; compare mtime/hash per run and ingest the changed one.
+History: operations-history.md §wiki_source 2026-07 reorg drift — resolved 2026-07-08
 
 ## Repo structure & session artifacts
 
@@ -239,7 +228,21 @@ read-only prep first, then wait via Monitor timers with escalating backoff
 (90s → 5min → 10min), probing with a trivial `echo` Bash call before
 re-dispatching the full subagent fan-out.
 
+### Reusable scripts live in `scripts/`; hard errors don't stay report-only (2026-08-31)
+
+Move any script declared "always reuse" into `scripts/` on the spot (`output/<run>/scripts/` and scratchpads evaporate). A report-only lint that finds a hard error (e.g. a YAML parse failure that drops a page from the statistics) fixes it on the spot or files it as an explicit to-do — "logged" is not "handled" — and the next ingest/lint first re-checks the hard errors the previous log.md named (one grep).
+
+## Shell / grep / git gotchas (all fail silently)
+
+- **Zero needs a positive control in the same dimension (08-31, 09-01, 09-15, 09-16/17)**: before trusting 0 hits / 0 stale / 0 writes / an empty diff, run a control that must hit in that same dimension — a deliberately wrong current status for a status sweep, a known old wording for an overturned-claim grep, a known `path:line:` entry for a list compare (must give ≥1), a version known to differ for a git pathspec ("the command runs" is not a control); write the self-check and its control command into the script or dispatch prompt rather than leaving them to the executor, and never add `2>/dev/null` to these checks (it hides the only clue).
+- **zsh does no word splitting on unquoted `$VAR` (08-31, 09-04)**: a multi-path string in a variable becomes one nonexistent path, so write the paths on the command line or expand with `${D[@]}` / `${=D}` — for every script argument too (e.g. `verify_mechanical.py --new`).
+- **BRE vs ERE braces (09-01)**: widen spacing with `.\{0,N\}` in plain grep (BRE) but `.{0,N}` in `grep -E` (ERE), where `\{` is a literal brace; if unsure, use plain grep.
+- **git diff is blind to untracked files (09-01)**: run `git ls-files --error-unmatch <path>` before reading an empty `git diff` as "unchanged"; for source changes prefer the header `jira_updated_max` (§Delta detection).
+- **`find -newermt` parses its string as local time (09-15)**: a UTC string moves the cutoff 8 h early on this machine, so record `date -u > start_time.txt` at the start and use `find -newer start_time.txt`; if `-newermt` is unavoidable, convert to local time and state the tz in the report (earlier `-newermt` self-proofs fed UTC strings — treat them as 8 h weaker).
+
 ## Lint & ingest-dispatch gotchas
+
+Multi-batch ingest coordinator checklist → `.rules/templates-ingest-coordination.md` (T6).
 
 ### Lint check 4 (stale vs sources) is low-signal on this vault (2026-07-16)
 
@@ -257,6 +260,8 @@ trigger re-ingest from them alone.
 共頁或缺頁（實例：18313/18368 兩票共一頁，按位置配對整體錯位）。Prompt 保留
 「目標頁不符描述就 SKIP 並回報」逃生口——07-16 事故靠它揪錯。
 
+**歸屬判準（09-21、09-23）**：grep 命中只是候選——owned 頁一律由 `sources:` 區塊決定（逐行解析該 key 到下一個頂層 key，不用 DOTALL），且 entry 的 basename 必須 `== <ticket>.md`（子票路徑的資料夾名含 epic 票號，子字串比對會把頁算給 epic；只在資料夾名出現者另列 `via_folder`）。命中但不在 `sources:` 的頁列為 mention-only，派工 prompt 另立一段「這些你不擁有，要改走 CROSS-BATCH」；共頁（同一頁被多票列為來源）的票歸同一個 agent——這是決定批次切法的主要依據。
+
 ### Vault 頁面 git untracked——沒有頁面級回滾（2026-07-16）
 
 <vault> 雖在 git repo 內，但日常變更全 untracked，`git checkout` 無法回到
@@ -264,3 +269,10 @@ session 前狀態；vault 靠跨機同步而非 git。①派工 REPORT 要求 su
 被改動句原文，事後才有回滾依據（見 delegation.md §4）；②「重來」的可行語義
 是逐頁重審重寫，不是字面 revert；③高風險批次改動前比照 manifest 慣例先
 `cp` 頁面級備份。^[inferred]
+
+### Closing verifiers, provenance & YAML (2026-07-20 … 09-23)
+
+- **Provenance block = marker density (07-20, 07-23)**: fix check-7 drift by recomputing the block from the markers with check-7's `split_claims` logic (usually lowering the declared value; e.g. `output/lint-2026-07-20/scripts/fix_provenance.py`), never by adding markers — frontmatter + bump `updated` only, body untouched, then re-run check-7 → 0. Non-standard markers (e.g. `^[extracted]`): vault-wide grep count first, then one batch clean (strip + recompute, backup first), done only when a re-grep returns 0 and every page's YAML parses. (To-do: wiki-synthesize still writes a semantic guess instead of marker density.)
+- **Closing verifier scripts (08-27)**: reuse `scripts/verify_mechanical.py`; parse indented YAML blocks line by line (its `fm_block()`), never with a regex repeat group + `\s*`; strip fenced blocks and inline code spans before wikilink scans (bash `[[ ]]`, `$(...)`); length limits (summary ≤200) hold only via a script `len()` assert; if the first run reports abnormally many issues, test the verifier on 1–2 of them before touching pages. (To-do: it lacks the key-set-vs-backup and body-unchanged checks — run-dir scripts do those.)
+- **YAML parse failure is a hard error (08-27)**: a page whose frontmatter fails `yaml.safe_load` silently drops out of every YAML-based check (while `trust.py`'s line parser still passes it as clean), so report it first as its own category (not a check-3 "missing field"), and give every "N pages hit" with its check's denominator — a denominator below the page count means pages were silently excluded. (To-do: lint check-3 and `trust.py` lack this smoke check; verify_mechanical C0 has it.)
+- **Image links resolve from the source's folder (09-23)**: resolve `![](attachments/…)` against `dirname(<source file>)` first, then the wiki-source root, and only then mark it NOT FOUND and report it.
